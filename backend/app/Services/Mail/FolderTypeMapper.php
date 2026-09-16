@@ -60,11 +60,12 @@ final class FolderTypeMapper
 
     /**
      * @param  list<string>  $attributes  Raw IMAP folder attributes/flags (e.g. ['\HasNoChildren', '\Sent'])
-     * @return array{type: string, display_name: string}
+     * @param  string  $delimiter  The hierarchy delimiter this server reports for this folder (e.g. `.` or `/`) —
+     *                             needed to strip a parent prefix like `INBOX.` before matching the name fallback
      */
-    public function map(array $attributes, string $name): array
+    public function map(array $attributes, string $name, string $delimiter = '/'): array
     {
-        $type = $this->mapBySpecialUse($attributes) ?? $this->mapByName($name) ?? 'custom';
+        $type = $this->mapBySpecialUse($attributes) ?? $this->mapByName($name, $delimiter) ?? 'custom';
 
         return [
             'type' => $type,
@@ -86,10 +87,19 @@ final class FolderTypeMapper
         return null;
     }
 
-    private function mapByName(string $name): ?string
+    private function mapByName(string $name, string $delimiter): ?string
     {
-        $simpleName = strtoupper(trim(basename(str_replace('\\', '/', $name))));
+        $simpleName = $name;
 
-        return self::NAME_FALLBACK_MAP[$simpleName] ?? null;
+        // IranServer (and many Courier/Dovecot mbox-style setups) uses "." as
+        // the hierarchy delimiter, e.g. "INBOX.spam" — not "/" — so the
+        // delimiter must come from the server's own LIST response per folder,
+        // never be assumed.
+        if ($delimiter !== '' && str_contains($name, $delimiter)) {
+            $segments = explode($delimiter, $name);
+            $simpleName = (string) end($segments);
+        }
+
+        return self::NAME_FALLBACK_MAP[strtoupper(trim($simpleName))] ?? null;
     }
 }

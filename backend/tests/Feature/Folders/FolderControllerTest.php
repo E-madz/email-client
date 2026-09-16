@@ -54,6 +54,31 @@ class FolderControllerTest extends TestCase
         ]);
     }
 
+    public function test_syncing_folders_strips_a_dot_delimited_parent_prefix_before_name_matching(): void
+    {
+        // Real-world case found on IranServer: it reports "." as the
+        // hierarchy delimiter (not "/"), so a folder path like "INBOX.spam"
+        // must be split on "." — not blindly treated as a flat name — before
+        // falling back to name-based type matching.
+        $this->mockRawFolderList([
+            'INBOX' => ['delimiter' => '.', 'flags' => ['\HasNoChildren']],
+            'INBOX.spam' => ['delimiter' => '.', 'flags' => ['\HasNoChildren']],
+            'INBOX.Sent' => ['delimiter' => '.', 'flags' => ['\HasNoChildren', '\Sent']],
+        ]);
+
+        $user = User::factory()->create();
+        $account = EmailAccount::factory()->for($user)->create();
+
+        $response = $this->actingAs($user, 'sanctum')->getJson("/api/email-accounts/{$account->id}/folders");
+
+        $response->assertOk();
+        $names = collect($response->json())->keyBy('name');
+
+        $this->assertSame('spam', $names['INBOX.spam']['type']);
+        $this->assertSame('هرزنامه', $names['INBOX.spam']['display_name']);
+        $this->assertSame('sent', $names['INBOX.Sent']['type']);
+    }
+
     public function test_syncing_folders_twice_upserts_rather_than_duplicating(): void
     {
         $this->mockRawFolderList([

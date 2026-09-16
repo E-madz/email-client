@@ -57,5 +57,16 @@ export const useFoldersStore = defineStore('folders', {
         folder.unread_count = Math.max(0, folder.unread_count + delta)
       }
     },
+
+    /**
+     * Record locally that a folder's messages were just synced, so we don't
+     * ask for another automatic sync next time it's opened in this session.
+     */
+    markSynced(folderId) {
+      const folder = this.items.find((item) => item.id === folderId)
+      if (folder) {
+        folder.last_synced_at = new Date().toISOString()
+      }
+    },
   },
 })

@@ -1,6 +1,7 @@
 <script setup>
 import { watch, onMounted } from 'vue'
 import { useMessagesStore } from '../stores/messages'
+import { useFoldersStore } from '../stores/folders'
 import LoadingSpinner from './LoadingSpinner.vue'
 import ErrorBanner from './ErrorBanner.vue'
 import EmptyState from './EmptyState.vue'
@@ -12,6 +13,7 @@ const props = defineProps({
 const emit = defineEmits(['select'])
 
 const messages = useMessagesStore()
+const folders = useFoldersStore()
 
 const dateFormatter = new Intl.DateTimeFormat('fa-IR', { dateStyle: 'short', timeStyle: 'short' })
 function formatDate(iso) {
@@ -19,11 +21,22 @@ function formatDate(iso) {
 }
 
 function loadList(page = 1) {
-  if (props.folderId) {
-    messages.fetchList(props.folderId, page)
-  } else {
+  if (!props.folderId) {
     messages.reset()
+    return
   }
+
+  // A folder that's never been synced would otherwise always show empty on
+  // first visit — this app's sync is on-demand-per-folder (not background
+  // polling), so trigger that first sync automatically instead of making
+  // the user discover the "دریافت ایمیل جدید" button themselves.
+  const folder = folders.items.find((item) => item.id === props.folderId)
+  if (page === 1 && folder && !folder.last_synced_at) {
+    messages.sync(props.folderId)
+    return
+  }
+
+  messages.fetchList(props.folderId, page)
 }
 
 async function syncNow() {

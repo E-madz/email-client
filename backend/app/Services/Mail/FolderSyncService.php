@@ -41,7 +41,7 @@ final class FolderSyncService
         }
 
         foreach ($rawFolders as $name => $item) {
-            $mapped = $this->typeMapper->map($item['flags'] ?? [], (string) $name);
+            $mapped = $this->typeMapper->map($item['flags'] ?? [], (string) $name, (string) ($item['delimiter'] ?? '/'));
 
             Folder::query()->updateOrCreate(
                 ['email_account_id' => $emailAccount->id, 'name' => $name],

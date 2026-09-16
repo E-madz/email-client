@@ -47,6 +47,7 @@ export const useMessagesStore = defineStore('messages', {
       try {
         await api.post(`/folders/${folderId}/sync`)
         await this.fetchList(folderId, 1)
+        useFoldersStore().markSynced(folderId)
       } catch (error) {
         this.syncError = error
         throw error
