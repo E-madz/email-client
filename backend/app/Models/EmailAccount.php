@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 #[Fillable(['user_id', 'mail_server_id', 'email', 'password', 'status', 'last_verified_at'])]
 #[Hidden(['password'])]
@@ -41,6 +42,14 @@ class EmailAccount extends Model
     public function mailServer(): BelongsTo
     {
         return $this->belongsTo(MailServer::class);
+    }
+
+    /**
+     * @return HasMany<Folder, $this>
+     */
+    public function folders(): HasMany
+    {
+        return $this->hasMany(Folder::class);
     }
 
     public function markVerified(): void

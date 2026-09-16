@@ -56,9 +56,14 @@ email-client/
 
 ### 3.1 Layered architecture
 - **Controllers are thin.** They validate the request (via Form Requests), call a service, and return a Resource/JSON response. No business logic, no direct IMAP/SMTP/Eloquent query building in controllers.
-- **Service layer** owns business logic and all protocol interaction, e.g.:
-  - `App\Services\Mail\EmailAuthService` — validates credentials against a mail server profile by performing a live IMAP handshake.
-  - `App\Services\Mail\ImapClientService` (Phase 2) — fetch folders/messages via `webklex/laravel-imap`.
+- **Service layer** owns business logic and all protocol interaction:
+  - `App\Services\Mail\ImapConnectionFactory` — single source of truth for turning an email/password (or a stored `EmailAccount`) into a connected IMAP client, and for mapping whatever the server throws back onto our own exceptions. Every other IMAP-touching service goes through this so an exception-mapping fix (§3.6) only ever needs to be made once.
+  - `App\Services\Mail\EmailAuthService` — thin wrapper: connect then disconnect, for the Phase 1 handshake test.
+  - `App\Services\Mail\FolderTypeMapper` — maps a raw IMAP folder to our closed folder-type set + a Persian display label.
+  - `App\Services\Mail\FolderSyncService` — upserts an account's folder list from the live server (Phase 2).
+  - `App\Services\Mail\MessageSyncService` — incremental, UIDVALIDITY-aware message sync for one folder (Phase 2).
+  - `App\Services\Mail\MessageContentService` — lazily fetches+caches a message's `body_html` on first view (Phase 2).
+  - `App\Services\Mail\MessageFlagService` — sets `\Seen`/`\Flagged` remote-first, then local, on success only (Phase 2).
   - `App\Services\Mail\SmtpMailService` (Phase 4) — compose/send via Laravel Mailer.
 - **Repositories:** not required for MVP — Eloquent models are the persistence layer. Only introduce a repository if a service needs to swap storage strategies (unlikely in this timeframe).
 - **Form Requests** for all input validation (`StoreEmailAccountRequest`, etc.) — never validate inline in controllers.
@@ -86,13 +91,54 @@ Even though only IranServer is implemented and tested now, the schema and code m
 
 No `domains` column — see the zero-config note in §1; domain-to-provider matching isn't implemented in this MVP.
 
-### 3.3 Incremental database design
+### 3.3 Folder & message sync schema (Phase 2, implemented)
+Phase 2 replaced the original "live-fetch, no persistence" plan (Decision Log §8 item 4) with a local sync-and-cache engine, for UX/performance — see §8 item 17 for why and what changed.
+
+**`folders`:**
+
+| Column | Type | Notes |
+|---|---|---|
+| `email_account_id` | `BIGINT UNSIGNED`, FK → `email_accounts`, `cascadeOnDelete` | |
+| `name` | `VARCHAR(255)` | Raw IMAP folder path (e.g. `INBOX`, `Sent Items`) — what's actually used to `SELECT`/`EXAMINE` it |
+| `type` | `ENUM('inbox','sent','drafts','trash','spam','archive','custom')`, default `'custom'` | Mapped by `FolderTypeMapper` — SPECIAL-USE attribute first, folder-name heuristic fallback (see the real-world caveat in §3.6) |
+| `display_name` | `VARCHAR(100)` | Persian label for the UI |
+| `uid_validity` | `BIGINT UNSIGNED`, nullable | `NULL` until first synced; a changed value triggers a full resync (§3.6) |
+| `last_uid` | `BIGINT UNSIGNED`, default `0` | High-water mark for incremental sync |
+| `last_synced_at` | `TIMESTAMP`, nullable | |
+| unique | `unique(email_account_id, name)` | |
+
+Folders are stored **flat** — no `parent_id`/hierarchy. No FR needs nested folder trees; a hierarchical name (e.g. `Work/Projects`) is just stored as one flat `name` string.
+
+**`messages`:**
+
+| Column | Type | Notes |
+|---|---|---|
+| `folder_id` | `BIGINT UNSIGNED`, FK → `folders`, `cascadeOnDelete` | |
+| `uid` | `BIGINT UNSIGNED` | Valid only under the folder's current `uid_validity` |
+| `rfc_message_id` | `VARCHAR(255)`, nullable | The `Message-ID` header — named to not collide with the row's own `id` |
+| `in_reply_to` | `VARCHAR(255)`, nullable | Raw `In-Reply-To` header value; **stored for future threading, no threading/conversation-view logic built in Phase 2** |
+| `subject` | `VARCHAR(500)`, nullable | |
+| `from_name` / `from_email` | `VARCHAR(255)`, nullable | |
+| `to` | `JSON` | List of `{name, email}` — a normalized recipients table would be over-engineering for the MVP |
+| `cc` / `bcc` | `JSON`, nullable | |
+| `date` | `TIMESTAMP` | The message's `Date` header |
+| `body_text` | `MEDIUMTEXT`, nullable | Populated at sync time (preview + search) |
+| `body_html` | `LONGTEXT`, nullable | **Lazy** — stays `NULL` until the message is opened (`GET /api/messages/{id}`), to keep folder sync fast (§8 item 22) |
+| `is_read` / `is_flagged` | `BOOLEAN`, default `false` | Mirror of `\Seen` / `\Flagged`, always written remote-first (§8 item 20) |
+| `has_attachments` | `BOOLEAN`, default `false` | Denormalized to avoid a join in the message list |
+| unique | `unique(folder_id, uid)` | |
+| index | `index(folder_id, date)` | Paginated list ordered by date (FR-3.2) |
+| index | `index(folder_id, is_read)` | Fast local `unread_count` per folder |
+
+**`message_attachments`:** `message_id` (FK, `cascadeOnDelete`), `filename` (`VARCHAR(255)`), `mime_type` (`VARCHAR(150)`), `size_bytes` (`INT UNSIGNED`), `part_number` (`VARCHAR(50)`) — metadata only, no file content stored; a real download fetches the part live from IMAP by UID + part number when actually requested (not built in Phase 2).
+
+### 3.4 Incremental database design
 - Create migrations **only for what the current phase needs.** Do not pre-build tables/columns for future phases "just in case."
 - Every migration is additive and reversible (`down()` must work).
 - Naming: snake_case tables, plural (`users`, `mail_servers`, `email_accounts`, `email_folders`, `emails`).
 - Foreign keys use `foreignId()->constrained()->cascadeOnDelete()` unless a phase says otherwise.
 
-### 3.4 Code quality standards
+### 3.5 Code quality standards
 - `declare(strict_types=1);` at the top of **every** PHP file (app code — not required in stock Laravel config/bootstrap files unless already present).
 - **Explicit return types** on every method, including `void`.
 - **Explicit param types** — no untyped `mixed` unless genuinely polymorphic.
@@ -101,7 +147,7 @@ No `domains` column — see the zero-config note in §1; domain-to-provider matc
 - Laravel Pint for formatting (`composer.json` already includes it) — run before committing.
 - Frontend: ESLint + Prettier conventions consistent with Vue 3 `<script setup>` + Tailwind (add configs in Phase 3 if not already present).
 
-### 3.5 Exception handling (critical — this is an MVP talking to real, flaky mail servers)
+### 3.6 Exception handling (critical — this is an MVP talking to real, flaky mail servers)
 - Wrap every IMAP/SMTP call in service-layer try/catch. Never let a raw `ErrorException`/`Webklex\PHPIMAP\Exceptions\*` bubble to the HTTP response.
 - Define app-specific exceptions, e.g.:
   - `App\Exceptions\Mail\ImapConnectionException` (network/timeout)
@@ -110,7 +156,8 @@ No `domains` column — see the zero-config note in §1; domain-to-provider matc
 - Map these to clear, user-safe JSON error responses (no raw protocol stack traces leaked to the frontend); log full details server-side (`Log::error` with context, **never log raw passwords**).
 - Set explicit connection/read timeouts on the IMAP client (don't rely on PHP defaults) so a hung mail server can't hang a request indefinitely.
 - Distinguish, at minimum: connection/network failure vs. authentication failure vs. unexpected/server error — the frontend needs to show different messages for each.
-- **Real-world lesson (found testing against actual IranServer):** `webklex/laravel-imap`'s own `AuthFailedException` is only thrown when the library's internal response-validation check fails — it is **not** guaranteed for every server. IranServer instead rejects a bad `LOGIN` with a generic `ImapServerErrorException` carrying `NO [AUTHENTICATIONFAILED] ...` in its message. `EmailAuthService` therefore also catches `ImapServerErrorException` and inspects the RFC 5530 response code inside the message (`AUTHENTICATIONFAILED`, `AUTHORIZATIONFAILED`, `EXPIRED`, `PRIVACYREQUIRED` → auth failure; anything else → connection/server error). **Apply the same pattern in Phase 2/4** when adding folder-fetch and SMTP-send error handling — don't assume a library's "expected" exception type covers every real server's actual wire behavior; verify against IranServer directly.
+- **Real-world lesson (Phase 1, found testing against actual IranServer):** `webklex/laravel-imap`'s own `AuthFailedException` is only thrown when the library's internal response-validation check fails — it is **not** guaranteed for every server. IranServer instead rejects a bad `LOGIN` with a generic `ImapServerErrorException` carrying `NO [AUTHENTICATIONFAILED] ...` in its message. `ImapConnectionFactory` therefore also catches `ImapServerErrorException` and inspects the RFC 5530 response code inside the message (`AUTHENTICATIONFAILED`, `AUTHORIZATIONFAILED`, `EXPIRED`, `PRIVACYREQUIRED` → auth failure; anything else → connection/server error). **Apply the same skepticism in Phase 4** when adding SMTP-send error handling — don't assume a library's "expected" exception type covers every real server's actual wire behavior; verify against IranServer directly.
+- **Real-world lesson (Phase 2, library limitation):** `webklex/laravel-imap`'s `Folder::parseAttributes()` reads only a handful of generic IMAP flags (`\NoInferiors`, `\NoSelect`, `\Marked`, `\Referral`, `\HasChildren`) and **discards everything else** — the SPECIAL-USE attributes (RFC 6154: `\Sent`, `\Drafts`, `\Trash`, `\Junk`, `\Archive`) that `FolderTypeMapper` needs are silently thrown away by the library's own `Folder` wrapper, with no public getter to recover them. `FolderSyncService` works around this by bypassing `Client::getFolders()` entirely and reading `$client->getConnection()->folders('', '*')->validatedData()` directly — the raw per-folder `flags` array — before the wrapper has a chance to drop anything. **Check this pattern before trusting any webklex convenience wrapper for data it doesn't obviously expose** — the library often parses more from the wire than it re-exposes.
 
 ---
 
@@ -139,7 +186,7 @@ No `domains` column — see the zero-config note in §1; domain-to-provider matc
 - A live handshake distinguishes `ImapAuthenticationException` (bad credentials) from `ImapConnectionException` (network/timeout, transient).
 - Only an **authentication** failure sets `status = 'needs_reauth'`. A connection failure never touches `status` or `last_verified_at` — it's transient and unrelated to the stored password, so flagging it would incorrectly tell the user to re-enter a password that's actually still correct.
 - `PUT /api/email-accounts/{id}` (added to Phase 1 for this reason) re-runs the live handshake with a new password; only on success does it update `password`, reset `status` to `active`, and bump `last_verified_at`. On failure it sets `status = 'needs_reauth'` again and changes nothing else.
-- `status` was deliberately kept to two values instead of a broader enum (`error`, `disabled`) — no current FR needs them, and persisting a transient `error` state risks it going stale with no code path to clear it. Extend the enum via a new migration if/when a real need appears (consistent with incremental DB design, §3.3).
+- `status` was deliberately kept to two values instead of a broader enum (`error`, `disabled`) — no current FR needs them, and persisting a transient `error` state risks it going stale with no code path to clear it. Extend the enum via a new migration if/when a real need appears (consistent with incremental DB design, §3.4).
 
 ### 4.3 Credential handling
 - Account passwords are encrypted at rest with `Crypt::encryptString()` / `Crypt::decryptString()` (Laravel's `APP_KEY`-based reversible encryption) — required because the app must present the plaintext password to IMAP/SMTP on the user's behalf. This is **not** password hashing (bcrypt) — do not confuse the two. (`users.password` still uses standard bcrypt hashing for app login, as normal.)
@@ -165,12 +212,18 @@ Work phase-by-phase. Do not start a phase's frontend/backend work until the prev
 - [x] Feature tests (19 passing): register/login/logout, unauthenticated → 401, successful handshake → 201 + encrypted password stored, auth failure → 422 + nothing stored, connection failure → 503 + nothing stored, duplicate email → 422 validation, per-user account isolation, re-auth flow (`needs_reauth` set/cleared), ownership checks on update/destroy (403 for other users' accounts), `restrictOnDelete` on `mail_servers`
 - **Checkpoint met — verified against a real IranServer mailbox (Postman):** wrong password → `422` (`"The email address or password was rejected by the mail server."`); correct real credentials → `201` with `status: "active"`, `last_verified_at` set, no `password` field in the response. Phase 1 is fully done.
 
-### Phase 2 — Fetching & handling emails via IMAP
-- [ ] `ImapClientService` (or interface + IranServer/webklex implementation) — list folders, list messages (paginated), fetch single message (headers + body)
-- [ ] **Decided:** no `email_folders` persistence table — fetch folders/messages live from IMAP on each request (simplest for the 2-day budget; revisit only if performance in Phase 5 demands caching)
-- [ ] Endpoints: list folders, list messages in folder (paginated), get single message — all scoped to the authenticated user's own `email_accounts`
-- [ ] Timeout + error handling reused from Phase 1's exception classes
-- **Checkpoint:** can list INBOX folders and messages for a stored account through the API.
+### Phase 2 — Fetching & handling emails via IMAP (implemented)
+- [x] **Superseded Decision Log §8 item 4:** built a local sync-and-cache engine instead of live-fetch-only, for UX/performance — see §8 item 17. `folders`/`messages`/`message_attachments` migrations + models (schema in §3.3)
+- [x] `ImapConnectionFactory` extracted from Phase 1's `EmailAuthService` — single source of truth for connecting + exception mapping, reused by every Phase 2 service (§3.1, §3.6)
+- [x] `FolderTypeMapper` — SPECIAL-USE attribute first (read via the raw connection, not the lossy `Folder` wrapper — §3.6), name-heuristic fallback, Persian `display_name`
+- [x] `FolderSyncService::sync()` — upserts an account's folders; `GET /api/email-accounts/{emailAccount}/folders` refreshes and returns them with a locally-computed `unread_count` (FR-1.1–FR-1.4)
+- [x] `MessageSyncService::sync()` — UIDVALIDITY-aware incremental sync (full resync on mismatch, §8 item 18), batch-capped at 30 on first sync, `leaveUnread()` throughout so syncing never marks a message `\Seen`; `POST /api/folders/{folder}/sync` (FR-2.1–FR-2.7)
+- [x] `body_html` fetched lazily — `MessageContentService::ensureBodyHtmlLoaded()` only hits IMAP the first time `GET /api/messages/{message}` is called for that message, then caches it (§8 item 22, FR-3.5)
+- [x] `MessageFlagService::setFlags()` — remote IMAP flag set/unset first, local DB only updated on success (§8 item 20); `PATCH /api/messages/{message}/flags` (FR-4.1–FR-4.3)
+- [x] `GET /api/folders/{folder}/messages` — paginated (20/page), ordered by `date` DESC, summary shape only (no `body_html`) per FR-3.1–FR-3.4
+- [x] All Phase 2 endpoints scoped to the authenticated user via the `email_account → folder → message` ownership chain (403 otherwise), consistent with Phase 1 (FR-5.3)
+- [x] Feature tests (40 passing total, 21 new in Phase 2): folder sync + SPECIAL-USE/name-fallback mapping + upsert-not-duplicate, message sync (first batch, incremental, UIDVALIDITY-changed resync, attachment metadata), message list pagination/ordering/summary shape, lazy `body_html` fetch-once-then-cache, flag sync remote-then-local ordering (including "remote fails → local unchanged"), ownership checks on every new endpoint
+- **Checkpoint:** verified against the automated test suite (mocked IMAP client/messages, including the real webklex `Message`/`Attachment` typed-collection quirks worked around in `tests/Concerns/InteractsWithImapMocks.php`) — **not yet verified against a real IranServer mailbox** (folders/messages/sync/flags); do that next, same as Phase 1's real-account check, before considering Phase 2 fully done.
 
 ### Phase 3 — Vue 3 frontend
 - [ ] `frontend/` Vite + Vue 3 + Pinia + Tailwind scaffold
@@ -258,7 +311,7 @@ cd backend
 | 1 | Frontend location | Separate `frontend/` Vite + Vue 3 SPA, calls Laravel API over JSON (§2) |
 | 2 | Account ownership model | Standard Laravel `users` table; a user owns multiple `email_accounts` via `user_id` FK (§4.1) |
 | 3 | `mail_servers` seed columns | `name, slug, imap_host, imap_port, imap_encryption, smtp_host, smtp_port, smtp_encryption, is_active, notes` (§3.2) |
-| 4 | Folder persistence (Phase 2) | Live-fetch from IMAP on every request, no `email_folders` table for MVP (§5, Phase 2) |
+| 4 | Folder persistence (Phase 2) | **Superseded by item 17** — originally live-fetch-only, revisited once real Phase 2 FRs were scoped |
 | 5 | Branching strategy | **Assumed default:** direct commits to `main`, not explicitly confirmed — flag if per-phase branches are preferred (§7) |
 | 6 | Domain-to-provider auto-detection (FR-2.2) | **Rejected as originally scoped** — IranServer is shared hosting, so an email's domain can't identify its provider without a live MX/DNS lookup (i.e. Autodiscovery, an explicit non-goal). Every account is routed to the single `mail_servers.is_default = true` row instead; no domain matching in this MVP (§1, §3.2) |
 | 7 | `users.username` | Added as its own unique, 50-char column, separate from `email` — app login uses username, not email (§4.1) |
@@ -269,11 +322,20 @@ cd backend
 | 12 | `imap_encryption` / `smtp_encryption` | `ENUM('ssl','tls')` at the DB level, not free-form `VARCHAR` — a genuinely closed, stable set (§3.2) |
 | 13 | App-level auth mechanism | Laravel Sanctum personal access tokens (Bearer), not cookie-based SPA auth — simpler for a separately-hosted SPA in a 2-day MVP (§4.1) |
 | 14 | API JSON envelope | `JsonResource::withoutWrapping()` — responses are flat (no `data` envelope) for a simpler frontend contract |
-| 15 | Auth-failure detection for real servers | `EmailAuthService` also catches `ImapServerErrorException` and parses its RFC 5530 response code, because real-world testing showed IranServer doesn't always throw the library's own `AuthFailedException` for bad credentials (§3.5) |
-| 16 | Handshake failure logging | Added `Log::error` with exception class/message (and any wrapped previous exception) on every handshake failure — an earlier gap meant a real failure left nothing in `laravel.log` to debug from (§3.5) |
+| 15 | Auth-failure detection for real servers | `EmailAuthService` also catches `ImapServerErrorException` and parses its RFC 5530 response code, because real-world testing showed IranServer doesn't always throw the library's own `AuthFailedException` for bad credentials (§3.6) |
+| 16 | Handshake failure logging | Added `Log::error` with exception class/message (and any wrapped previous exception) on every handshake failure — an earlier gap meant a real failure left nothing in `laravel.log` to debug from (§3.6) |
+| 17 | Phase 2 scope: sync engine vs. live-fetch | Switched from item 4's live-fetch-only plan to a local sync-and-cache engine (`folders`/`messages`/`message_attachments`, §3.3) for UX/performance, accepting the larger engineering cost consciously given the 2-day budget |
+| 18 | `folders.uid_validity` | Added (`BIGINT UNSIGNED`, nullable) — without it, a server-side UIDVALIDITY change would silently corrupt incremental sync (missed/duplicate/wrong messages); a mismatch now triggers a full resync from `last_uid = 0` (§3.3, §3.6) |
+| 19 | Folder type mapping | SPECIAL-USE IMAP attribute (RFC 6154) first, folder-name heuristic fallback — implemented by reading the raw `LIST` response directly, bypassing `webklex`'s `Folder` wrapper which discards SPECIAL-USE flags (§3.6) |
+| 20 | Flag sync ordering | Remote IMAP `setFlag`/`unsetFlag` always called before the local `is_read`/`is_flagged` columns are touched; on a remote failure, local state is left exactly as it was (`MessageFlagService`, §3.3) |
+| 21 | Auth-failure HTTP status for mail-server errors | Standardized on `422` (not `401`, which is reserved for the app's own Sanctum authentication) — applies to both Phase 1 and Phase 2 IMAP auth failures |
+| 22 | `body_html` fetch timing | Lazy — left `NULL` at sync time and only fetched (then cached) the first time `GET /api/messages/{id}` is called, to keep a folder sync's HTTP request comfortably within typical PHP/web-server timeouts; sync batch size capped at 30 messages for the same reason (§3.3) |
+| 23 | Table names | `folders`, `messages`, `message_attachments` (not `email_folders`/`emails` as informally suggested earlier in §3.4 — that was only an example, not a decision) |
+| 24 | `messages.message_id` → `rfc_message_id` | Renamed to avoid confusion with the row's own `id` primary key |
+| 25 | `messages.in_reply_to` | Added (`VARCHAR(255)`, nullable) — captured for free while already parsing standard headers, to avoid a future migration for Message/Conversation threading; **no threading logic is built in Phase 2**, this is storage only |
 
 Decisions can be revisited per phase — if something changes, update the relevant section above **and** add a row/note here so the log stays the source of truth.
 
 ---
 
-*Last updated: **Phase 1 complete and verified against a real IranServer mailbox** (correct password → 201/active; wrong password → 422) over Postman. 21 passing feature tests. Ready to start Phase 2. Branching strategy (§8, item 5) still unconfirmed. Update the checkboxes and this line as phases complete.*
+*Last updated: **Phase 1 complete and verified against a real IranServer mailbox.** **Phase 2 implemented** (folder/message sync engine, lazy body_html, remote-first flag sync) — 40 passing feature tests, but **not yet verified against a real IranServer mailbox**; do that next. Branching strategy (§8, item 5) still unconfirmed. Update the checkboxes and this line as phases complete.*
