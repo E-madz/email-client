@@ -37,15 +37,16 @@ This file guides Claude (and any other agent/developer) working in this reposito
 | IMAP | [`webklex/laravel-imap`](https://github.com/Webklex/laravel-imap) |
 | SMTP | Laravel Mailer (Symfony Mailer under the hood), port 465 / SSL |
 | Credential encryption | `Illuminate\Support\Facades\Crypt` (reversible — required so the app can re-authenticate to IMAP/SMTP on the user's behalf) |
-| Frontend | Vue 3 (Composition API `<script setup>`) |
-| State management | Pinia (multi-account state) |
-| CSS | Tailwind CSS |
+| Frontend | Vue 3 (Composition API `<script setup>`), plain JavaScript (no TypeScript) |
+| Routing | `vue-router` — added in Phase 3, not originally listed here (§8 item 28) |
+| State management | Pinia (multi-account state), one store per domain: `auth`, `accounts`, `folders`, `messages` |
+| CSS | Tailwind CSS v4 (via the `@tailwindcss/vite` plugin — no `tailwind.config.js` needed in v4) |
 
 Repo layout:
 ```
 email-client/
 ├── backend/          # Laravel 13 API application
-└── frontend/         # Vue 3 SPA (created in Phase 3), separate Vite app calling the Laravel API
+└── frontend/         # Vue 3 SPA (Phase 3), separate Vite app calling the Laravel API
 ```
 
 **Decided:** `frontend/` is a separate Vite + Vue 3 SPA that talks to the Laravel backend purely over a JSON API (no Blade/Inertia glue).
@@ -225,14 +226,20 @@ Work phase-by-phase. Do not start a phase's frontend/backend work until the prev
 - [x] Feature tests (40 passing total, 21 new in Phase 2): folder sync + SPECIAL-USE/name-fallback mapping + upsert-not-duplicate, message sync (first batch, incremental, UIDVALIDITY-changed resync, attachment metadata), message list pagination/ordering/summary shape, lazy `body_html` fetch-once-then-cache, flag sync remote-then-local ordering (including "remote fails → local unchanged"), ownership checks on every new endpoint
 - **Checkpoint:** verified against the automated test suite (mocked IMAP client/messages, including the real webklex `Message`/`Attachment` typed-collection quirks worked around in `tests/Concerns/InteractsWithImapMocks.php`) — **not yet verified against a real IranServer mailbox** (folders/messages/sync/flags); do that next, same as Phase 1's real-account check, before considering Phase 2 fully done.
 
-### Phase 3 — Vue 3 frontend
-- [ ] `frontend/` Vite + Vue 3 + Pinia + Tailwind scaffold
-- [ ] Pinia store for accounts (multi-account switcher) and current folder/message state
-- [ ] Account switcher UI
-- [ ] Folder navigation UI
-- [ ] Email list + reader UI
-- [ ] API client layer (axios/fetch wrapper) with typed error handling matching backend's exception shapes
-- **Checkpoint:** can log in (add account), switch accounts, browse folders, read an email — end to end in the browser.
+### Phase 3 — Vue 3 frontend (implemented)
+- [x] `frontend/` scaffolded with Vite + Vue 3 (Composition API, `<script setup>` only) + Pinia + Vue Router + Tailwind v4 (via `@tailwindcss/vite`, no `tailwind.config.js` needed in v4) — plain JS, no TypeScript (not in the original tech stack, would've been scope creep)
+- [x] RTL, Persian-language UI (`<html lang="fa" dir="rtl">`) — matches the audience (IranServer users) and the backend's own Persian `display_name` folder labels; Vazirmatn font via Google Fonts with a system-font fallback
+- [x] `src/lib/api.js` — zero-dependency `fetch` wrapper (no axios) with `Authorization: Bearer` injection from `localStorage`, JSON parsing, a typed `ApiError` (status + message + field `errors`), and a global 401 hook that forces logout
+- [x] Pinia stores **per domain**, exactly as specced: `stores/auth.js`, `stores/accounts.js`, `stores/folders.js`, `stores/messages.js` — no single giant store
+- [x] `vue-router` with a `beforeEach` guard (`requiresAuth` / `guestOnly`) — **not in the original tech stack list, added as an unavoidable implementation detail** of having a login page and a protected app shell
+- [x] Views: `LoginView`, `RegisterView`, `MailboxView` (3-pane shell: accounts+folders sidebar, message list, reader)
+- [x] Components: `AccountSwitcher` (+ `AddAccountModal`, `ReauthModal` for the `needs_reauth` flow), `FolderList` (SPECIAL-USE-aware icons, unread badges), `MessageList` (pagination, sync button, inline flag/star toggle), `MessageReader` (flag/read toggles, attachment chips), plus shared `LoadingSpinner`/`ErrorBanner`/`EmptyState`/`BaseModal`
+- [x] **Security:** `body_html` is rendered in a sandboxed `<iframe sandbox="allow-scripts allow-popups ...">` (`SafeHtmlFrame.vue`) with no `allow-same-origin` — any script in an email body runs, if at all, in an isolated opaque origin with no access to our DOM, cookies, or the auth token in `localStorage`. Height auto-fits via `postMessage` since the parent can't reach across that origin boundary. **Never render `body_html` with `v-html` directly** — see §8 item 26
+- [x] Loading/empty/error states built into every pane now (not deferred to Phase 5) — each has a retry action wired to its store
+- [x] Opening a message auto-marks it read (`PATCH .../flags`) when not already read — the backend's `show` endpoint is deliberately read-only (§3.1), so this is a frontend-side integration decision, not a backend change
+- [x] Verified end-to-end in a real browser (Playwright): unauthenticated guard redirect → register → mailbox shell renders → add-account modal → live 503 from a real (unreachable) IMAP attempt correctly surfaces as a Persian error message → logout → re-login restores the mailbox. Two real bugs were caught and fixed this way (§8 items 27–28) that the backend's own test suite couldn't have caught
+- [ ] **Not yet done in Phase 3:** actually connecting a **real** IranServer account through the UI (only tested with fake/unreachable credentials in this sandbox — no real IMAP egress here); ESLint/Prettier config (mentioned in §3.5 but not set up yet, tracked as a gap, not a blocker)
+- **Checkpoint:** can register/log in, see the mailbox shell, and get correct error feedback end-to-end in a real browser. **Do next:** open the app with a real IranServer account connected and click through folders → sync → open a message → toggle flags, to confirm the full real-world path Postman alone couldn't verify.
 
 ### Phase 4 — Composition & SMTP sending
 - [ ] `SmtpMailService` — send via Laravel Mailer/Symfony Mailer, port 465 SSL, using the account's decrypted credentials
@@ -272,12 +279,14 @@ php artisan serve
 
 Packages added in Phase 1: `laravel/sanctum` (API token auth) and `webklex/laravel-imap` (IMAP handshake/fetch). `php artisan install:api` published `routes/api.php` and the `personal_access_tokens` migration.
 
-Frontend (from Phase 3 onward):
+Frontend (Phase 3):
 ```bash
 cd frontend
+cp .env.example .env   # VITE_API_BASE_URL, defaults to http://127.0.0.1:8000/api
 npm install
-npm run dev
+npm run dev            # http://localhost:5173
 ```
+Requires the backend running (`php artisan serve`) at the URL in `VITE_API_BASE_URL`. CORS is already permissive by default (`config('cors')` → `allowed_origins: ['*']`), so no backend change was needed for the frontend's dev-server origin.
 
 Run backend tests:
 ```bash
@@ -333,9 +342,14 @@ cd backend
 | 23 | Table names | `folders`, `messages`, `message_attachments` (not `email_folders`/`emails` as informally suggested earlier in §3.4 — that was only an example, not a decision) |
 | 24 | `messages.message_id` → `rfc_message_id` | Renamed to avoid confusion with the row's own `id` primary key |
 | 25 | `messages.in_reply_to` | Added (`VARCHAR(255)`, nullable) — captured for free while already parsing standard headers, to avoid a future migration for Message/Conversation threading; **no threading logic is built in Phase 2**, this is storage only |
+| 26 | Rendering untrusted `body_html` | Sandboxed `<iframe sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox">` with no `allow-same-origin`, not `v-html` — an email body is attacker-controlled content; the iframe's opaque origin means any embedded script can't reach our DOM, `localStorage` (auth token), or API. **Any future change touching message rendering must keep this** (§5, Phase 3) |
+| 27 | Frontend language/RTL | Plain JavaScript (no TypeScript — not in the original tech stack), `<html lang="fa" dir="rtl">`, Persian UI copy throughout — matches the audience and the backend's own Persian folder labels (§5, Phase 3) |
+| 28 | `vue-router` added | Not in the original §2 tech stack table — added as an unavoidable implementation detail once a login page + protected app shell were needed; flagged here rather than silently expanding the stack (§5, Phase 3) |
+| 29 | Auth-state-change navigation | A logout (explicit or a forced one from a 401) only changes Pinia state, which doesn't itself trigger the router guard — found via an actual browser test where logging out left the user stuck on a blank mailbox route. Fixed with a single `watch(auth.isAuthenticated)` in `App.vue` that redirects to `/login` whenever it goes false and the current route isn't `guestOnly` (§5, Phase 3) |
+| 30 | Auto-mark-as-read on open | The backend's `GET /api/messages/{id}` is deliberately read-only (§3.1); the frontend calls `PATCH .../flags` with `is_read: true` right after a successful open if the message wasn't already read. A frontend integration choice, not a backend change (§5, Phase 3) |
 
 Decisions can be revisited per phase — if something changes, update the relevant section above **and** add a row/note here so the log stays the source of truth.
 
 ---
 
-*Last updated: **Phase 1 complete and verified against a real IranServer mailbox.** **Phase 2 implemented** (folder/message sync engine, lazy body_html, remote-first flag sync) — 40 passing feature tests, but **not yet verified against a real IranServer mailbox**; do that next. Branching strategy (§8, item 5) still unconfirmed. Update the checkboxes and this line as phases complete.*
+*Last updated: **Phase 1 complete, verified against a real IranServer mailbox.** **Phase 2 implemented** (40 passing backend tests), not yet verified against a real mailbox. **Phase 3 implemented** — Vue 3 + Pinia + Tailwind v4 mailbox UI, verified end-to-end in a real browser via Playwright (register → mailbox shell → add-account error handling → logout/re-login), catching and fixing two real bugs (§8 items 27/29) neither backend tests nor Postman could have caught. Real-IranServer verification is still outstanding for Phases 2 and 3 alike — the next session should connect one real account through the actual UI and click through the full folder/sync/read/flag path. Branching strategy (§8, item 5) still unconfirmed. Update the checkboxes and this line as phases complete.*

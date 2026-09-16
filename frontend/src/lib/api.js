@@ -1,0 +1,90 @@
+const BASE_URL = import.meta.env.VITE_API_BASE_URL
+
+const TOKEN_STORAGE_KEY = 'email_client_token'
+
+export class ApiError extends Error {
+  constructor(status, message, errors = null) {
+    super(message)
+    this.name = 'ApiError'
+    this.status = status
+    this.errors = errors
+  }
+}
+
+let unauthorizedHandler = null
+
+/**
+ * Register a callback invoked whenever the API responds 401 (an expired or
+ * invalid token). The auth store uses this to force a clean logout instead
+ * of leaving the app in a half-authenticated state.
+ */
+export function onUnauthorized(handler) {
+  unauthorizedHandler = handler
+}
+
+export function getToken() {
+  return localStorage.getItem(TOKEN_STORAGE_KEY)
+}
+
+export function setToken(token) {
+  if (token) {
+    localStorage.setItem(TOKEN_STORAGE_KEY, token)
+  } else {
+    localStorage.removeItem(TOKEN_STORAGE_KEY)
+  }
+}
+
+async function request(path, { method = 'GET', body, signal } = {}) {
+  const headers = {
+    Accept: 'application/json',
+  }
+
+  const token = getToken()
+  if (token) {
+    headers.Authorization = `Bearer ${token}`
+  }
+
+  let requestBody
+  if (body !== undefined) {
+    headers['Content-Type'] = 'application/json'
+    requestBody = JSON.stringify(body)
+  }
+
+  let response
+  try {
+    response = await fetch(`${BASE_URL}${path}`, {
+      method,
+      headers,
+      body: requestBody,
+      signal,
+    })
+  } catch {
+    throw new ApiError(0, 'اتصال به سرور برقرار نشد. اتصال اینترنت یا در دسترس بودن سرور را بررسی کنید.')
+  }
+
+  if (response.status === 204) {
+    return null
+  }
+
+  const contentType = response.headers.get('content-type') ?? ''
+  const data = contentType.includes('application/json') ? await response.json() : null
+
+  if (!response.ok) {
+    if (response.status === 401 && unauthorizedHandler) {
+      unauthorizedHandler()
+    }
+
+    const message = data?.message ?? 'خطای غیرمنتظره‌ای رخ داد.'
+    throw new ApiError(response.status, message, data?.errors ?? null)
+  }
+
+  return data
+}
+
+export const api = {
+  get: (path, options) => request(path, { ...options, method: 'GET' }),
+  post: (path, body, options) => request(path, { ...options, method: 'POST', body }),
+  put: (path, body, options) => request(path, { ...options, method: 'PUT', body }),
+  patch: (path, body, options) => request(path, { ...options, method: 'PATCH', body }),
+  delete: (path, options) => request(path, { ...options, method: 'DELETE' }),
+}

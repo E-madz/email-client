@@ -1,0 +1,111 @@
+<script setup>
+import { watch, onMounted } from 'vue'
+import { useFoldersStore } from '../stores/folders'
+import LoadingSpinner from './LoadingSpinner.vue'
+import ErrorBanner from './ErrorBanner.vue'
+
+const props = defineProps({
+  accountId: { type: Number, default: null },
+})
+
+const emit = defineEmits(['select'])
+
+const folders = useFoldersStore()
+
+const FOLDER_ICONS = {
+  inbox:
+    'M3 12h4.5l1.5 3h6l1.5-3H21M3 12v6.75A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V12M3 12l2.25-6.75A1.5 1.5 0 0 1 6.68 4.25h10.64a1.5 1.5 0 0 1 1.43 1L21 12',
+  sent: 'M6 12 3.269 3.126A59.77 59.77 0 0 1 21.485 12 59.77 59.77 0 0 1 3.27 20.876L5.999 12Zm0 0h7.5',
+  drafts: 'M16.862 4.487 18.549 2.8a2.121 2.121 0 1 1 3 3l-1.687 1.688M16.862 4.487 5.03 16.319l-4.132.918.918-4.132L16.862 4.487Z',
+  trash:
+    'M14.74 9-.346 9M9.26 9l.346 9M4.772 5.79 5.79 4.772A2.25 2.25 0 0 1 7.379 4h9.242a2.25 2.25 0 0 1 1.59.772l1.017 1.017M4.772 5.79 4 5.018M4.772 5.79 6.09 21.243A2.25 2.25 0 0 0 8.334 23h7.332a2.25 2.25 0 0 0 2.244-2.007L19 5.79M4.772 5.79H19.228',
+  spam: 'M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z',
+  archive:
+    'M20.25 7.5 18.75 6H5.25L3.75 7.5m16.5 0v10.5A1.5 1.5 0 0 1 18.75 19.5H5.25a1.5 1.5 0 0 1-1.5-1.5V7.5m16.5 0h-16.5m6.75 3h3',
+  custom: 'M3.75 9.75h16.5M3.75 9.75V19.5a1.5 1.5 0 0 0 1.5 1.5h13.5a1.5 1.5 0 0 0 1.5-1.5V9.75M3.75 9.75l1.5-5.25h13.5l1.5 5.25',
+}
+
+function loadFolders() {
+  if (props.accountId) {
+    folders.fetch(props.accountId)
+  } else {
+    folders.reset()
+  }
+}
+
+function selectFolder(folderId) {
+  folders.setActive(folderId)
+  emit('select', folderId)
+}
+
+watch(() => props.accountId, loadFolders)
+onMounted(loadFolders)
+</script>
+
+<template>
+  <div>
+    <div class="flex items-center justify-between px-1 pb-2 pt-4">
+      <h2 class="text-xs font-semibold uppercase tracking-wide text-gray-400">پوشه‌ها</h2>
+      <button
+        type="button"
+        class="rounded-full p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600 disabled:opacity-40"
+        aria-label="به‌روزرسانی پوشه‌ها"
+        :disabled="!accountId || folders.loadingAccountId === accountId"
+        @click="loadFolders"
+      >
+        <svg
+          class="h-3.5 w-3.5"
+          :class="{ 'animate-spin': accountId && folders.loadingAccountId === accountId }"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          aria-hidden="true"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99"
+          />
+        </svg>
+      </button>
+    </div>
+
+    <LoadingSpinner
+      v-if="accountId && folders.loadingAccountId === accountId && !folders.items.length"
+      size="sm"
+      label=""
+    />
+    <ErrorBanner
+      v-else-if="folders.error"
+      message="دریافت پوشه‌ها با خطا مواجه شد."
+      @retry="loadFolders"
+    />
+    <p v-else-if="!accountId" class="px-1 text-sm text-gray-400">ابتدا یک اکانت انتخاب کنید.</p>
+    <p v-else-if="!folders.items.length" class="px-1 text-sm text-gray-400">پوشه‌ای یافت نشد.</p>
+
+    <ul v-else class="space-y-0.5">
+      <li v-for="folder in folders.items" :key="folder.id">
+        <button
+          type="button"
+          class="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-sm transition"
+          :class="
+            folder.id === folders.activeId ? 'bg-indigo-50 font-medium text-indigo-700' : 'text-gray-700 hover:bg-gray-100'
+          "
+          @click="selectFolder(folder.id)"
+        >
+          <svg class="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" :d="FOLDER_ICONS[folder.type] ?? FOLDER_ICONS.custom" />
+          </svg>
+          <span class="flex-1 truncate text-right">{{ folder.display_name }}</span>
+          <span
+            v-if="folder.unread_count > 0"
+            class="rounded-full bg-indigo-600 px-1.5 py-0.5 text-[10px] font-semibold text-white"
+          >
+            {{ folder.unread_count }}
+          </span>
+        </button>
+      </li>
+    </ul>
+  </div>
+</template>
