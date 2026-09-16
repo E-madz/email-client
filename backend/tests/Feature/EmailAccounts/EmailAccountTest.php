@@ -16,6 +16,7 @@ use Webklex\PHPIMAP\Client;
 use Webklex\PHPIMAP\ClientManager;
 use Webklex\PHPIMAP\Exceptions\AuthFailedException;
 use Webklex\PHPIMAP\Exceptions\ConnectionFailedException;
+use Webklex\PHPIMAP\Exceptions\ImapServerErrorException;
 
 class EmailAccountTest extends TestCase
 {
@@ -86,6 +87,40 @@ class EmailAccountTest extends TestCase
     public function test_connecting_an_account_reports_a_distinct_error_when_the_server_is_unreachable(): void
     {
         $this->mockImapHandshake(succeeds: false, failureException: new ConnectionFailedException);
+        $user = User::factory()->create();
+
+        $response = $this->actingAs($user, 'sanctum')->postJson('/api/email-accounts', [
+            'email' => 'user@mycompany.ir',
+            'password' => 'super-secret',
+        ]);
+
+        $response->assertStatus(503);
+        $this->assertDatabaseCount('email_accounts', 0);
+    }
+
+    public function test_connecting_an_account_treats_a_real_server_authenticationfailed_response_as_an_auth_failure(): void
+    {
+        $this->mockImapHandshake(
+            succeeds: false,
+            failureException: new ImapServerErrorException('NO [AUTHENTICATIONFAILED] Authentication failed.'),
+        );
+        $user = User::factory()->create();
+
+        $response = $this->actingAs($user, 'sanctum')->postJson('/api/email-accounts', [
+            'email' => 'user@mycompany.ir',
+            'password' => 'wrong-password',
+        ]);
+
+        $response->assertStatus(422);
+        $this->assertDatabaseCount('email_accounts', 0);
+    }
+
+    public function test_connecting_an_account_treats_an_unrelated_server_error_as_a_connection_failure(): void
+    {
+        $this->mockImapHandshake(
+            succeeds: false,
+            failureException: new ImapServerErrorException('NO [UNAVAILABLE] Temporary server error.'),
+        );
         $user = User::factory()->create();
 
         $response = $this->actingAs($user, 'sanctum')->postJson('/api/email-accounts', [

@@ -13,10 +13,27 @@ use Webklex\PHPIMAP\Client;
 use Webklex\PHPIMAP\ClientManager;
 use Webklex\PHPIMAP\Exceptions\AuthFailedException;
 use Webklex\PHPIMAP\Exceptions\ConnectionFailedException;
+use Webklex\PHPIMAP\Exceptions\ImapServerErrorException;
 
 final class EmailAuthService
 {
     private const CONNECTION_TIMEOUT_SECONDS = 15;
+
+    /**
+     * IMAP response codes (RFC 5530) that indicate bad credentials rather than
+     * a genuine server/protocol error. Some servers (e.g. IranServer) reject a
+     * failed LOGIN with a generic ImapServerErrorException instead of the
+     * library's own AuthFailedException, so the response text has to be
+     * inspected to tell the two apart.
+     *
+     * @var list<string>
+     */
+    private const AUTH_FAILURE_RESPONSE_CODES = [
+        'AUTHENTICATIONFAILED',
+        'AUTHORIZATIONFAILED',
+        'EXPIRED',
+        'PRIVACYREQUIRED',
+    ];
 
     public function __construct(private readonly ClientManager $clientManager)
     {
@@ -39,6 +56,14 @@ final class EmailAuthService
             $this->logHandshakeFailure($mailServer, $email, $e);
 
             throw new ImapAuthenticationException('The email address or password was rejected by the mail server.', previous: $e);
+        } catch (ImapServerErrorException $e) {
+            $this->logHandshakeFailure($mailServer, $email, $e);
+
+            if ($this->isAuthenticationFailure($e)) {
+                throw new ImapAuthenticationException('The email address or password was rejected by the mail server.', previous: $e);
+            }
+
+            throw new ImapConnectionException('The mail server reported an error.', previous: $e);
         } catch (ConnectionFailedException $e) {
             $this->logHandshakeFailure($mailServer, $email, $e);
 
@@ -50,6 +75,19 @@ final class EmailAuthService
         } finally {
             $this->safeDisconnect($client);
         }
+    }
+
+    private function isAuthenticationFailure(ImapServerErrorException $e): bool
+    {
+        $message = strtoupper($e->getMessage());
+
+        foreach (self::AUTH_FAILURE_RESPONSE_CODES as $code) {
+            if (str_contains($message, $code)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function logHandshakeFailure(MailServer $mailServer, string $email, Throwable $e): void
