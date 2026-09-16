@@ -17,7 +17,7 @@ const frameId = `email-frame-${Math.random().toString(36).slice(2)}`
 const height = ref(200)
 
 const srcdoc = computed(() => `<!doctype html>
-<html>
+<html dir="auto">
   <head>
     <meta charset="utf-8" />
     <base target="_blank" />
@@ -34,7 +34,7 @@ const srcdoc = computed(() => `<!doctype html>
       table { max-width: 100%; }
     </style>
   </head>
-  <body>${props.html || '<p style="color:#9ca3af">این پیام بدون محتوا است.</p>'}</body>
+  <body dir="auto">${props.html || '<p style="color:#9ca3af">این پیام بدون محتوا است.</p>'}</body>
   <script>
     function reportHeight() {
       var h = document.body.scrollHeight;

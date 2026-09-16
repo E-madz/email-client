@@ -69,15 +69,21 @@ class MessageControllerTest extends TestCase
         $user = User::factory()->create();
         $account = EmailAccount::factory()->for($user)->create();
         $folder = Folder::factory()->for($account)->create();
-        $message = Message::factory()->for($folder)->create(['uid' => 5, 'body_html' => null]);
+        $message = Message::factory()->for($folder)->create(['uid' => 5, 'body_html' => null, 'is_read' => false]);
 
         $htmlMessage = $this->mockImapMessage(['uid' => 5], ['hasHTMLBody' => true, 'getHTMLBody' => '<p>Full body</p>']);
+        $htmlMessage->shouldReceive('setFlag')->with('Seen')->once()->andReturnTrue();
         $this->mockFolderSync(uidValidity: 1, allUids: [5], messagesToReturn: [$htmlMessage]);
 
         $response = $this->actingAs($user, 'sanctum')->getJson("/api/messages/{$message->id}");
 
-        $response->assertOk()->assertJsonPath('body_html', '<p>Full body</p>');
+        $response->assertOk()->assertJsonPath('body_html', '<p>Full body</p>')->assertJsonPath('is_read', true);
         $this->assertSame('<p>Full body</p>', $message->fresh()->body_html);
+        // Real-world fix: marking read now piggybacks on this same IMAP
+        // connection instead of the frontend triggering a second one via
+        // PATCH .../flags (CLAUDE.md §8) — so opening a previously-unread
+        // message no longer pays for two full IMAP handshakes.
+        $this->assertTrue($message->fresh()->is_read);
     }
 
     public function test_subsequent_view_of_a_message_uses_the_cached_html_without_contacting_imap(): void

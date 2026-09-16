@@ -20,6 +20,15 @@ final class MessageContentService
      * requested (CLAUDE.md §5, Phase 2 decision — keeps folder sync fast by
      * not downloading every message's full HTML body upfront).
      *
+     * Real-world lesson: the frontend marks a message read right after
+     * opening it (CLAUDE.md §8 item 30), which used to mean a *second*,
+     * separate IMAP connection (via MessageFlagService) immediately after
+     * this one — doubling the TCP+TLS+LOGIN round-trip latency to a real
+     * mail server on every first-open of an unread message. The Seen flag
+     * is now set on this same already-open connection/message instead, so
+     * the response this returns already carries is_read = true and the
+     * frontend's follow-up flags call becomes a no-op it correctly skips.
+     *
      * @throws ImapAuthenticationException when the stored credentials are no longer valid
      * @throws ImapConnectionException when the server cannot be reached, the folder/message no
      *                                 longer exists, or it reports an error
@@ -48,8 +57,20 @@ final class MessageContentService
                 throw new ImapConnectionException('The message no longer exists on the mail server.');
             }
 
+            $dirty = false;
+
             if ($imapMessage->hasHTMLBody()) {
                 $message->body_html = $imapMessage->getHTMLBody();
+                $dirty = true;
+            }
+
+            if (! $message->is_read) {
+                $this->connectionFactory->guard(fn () => $imapMessage->setFlag('Seen'));
+                $message->is_read = true;
+                $dirty = true;
+            }
+
+            if ($dirty) {
                 $message->save();
             }
         } finally {
