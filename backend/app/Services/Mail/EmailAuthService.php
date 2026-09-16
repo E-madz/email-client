@@ -36,14 +36,34 @@ final class EmailAuthService
         try {
             $client->connect();
         } catch (AuthFailedException $e) {
+            $this->logHandshakeFailure($mailServer, $email, $e);
+
             throw new ImapAuthenticationException('The email address or password was rejected by the mail server.', previous: $e);
         } catch (ConnectionFailedException $e) {
+            $this->logHandshakeFailure($mailServer, $email, $e);
+
             throw new ImapConnectionException('Could not reach the mail server.', previous: $e);
         } catch (Throwable $e) {
+            $this->logHandshakeFailure($mailServer, $email, $e);
+
             throw new ImapConnectionException('Unexpected error while contacting the mail server.', previous: $e);
         } finally {
             $this->safeDisconnect($client);
         }
+    }
+
+    private function logHandshakeFailure(MailServer $mailServer, string $email, Throwable $e): void
+    {
+        $previous = $e->getPrevious();
+
+        Log::error('IMAP handshake failed.', [
+            'mail_server' => $mailServer->slug,
+            'email' => $email,
+            'exception_class' => $e::class,
+            'exception_message' => $e->getMessage(),
+            'previous_exception_class' => $previous === null ? null : $previous::class,
+            'previous_exception_message' => $previous?->getMessage(),
+        ]);
     }
 
     private function makeClient(MailServer $mailServer, string $email, string $password): Client
