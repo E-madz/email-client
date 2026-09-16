@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Support\MimeHeader;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -47,6 +49,21 @@ class Message extends Model
             'is_flagged' => 'boolean',
             'has_attachments' => 'boolean',
         ];
+    }
+
+    /**
+     * Decoded defensively on every read, independent of sync-time decoding
+     * (CLAUDE.md §8 item 33/36) — self-heals rows synced before the decoder
+     * fix and any deployment where the webklex-level config fix didn't take.
+     */
+    protected function subject(): Attribute
+    {
+        return Attribute::make(get: fn (?string $value) => MimeHeader::decode($value));
+    }
+
+    protected function fromName(): Attribute
+    {
+        return Attribute::make(get: fn (?string $value) => MimeHeader::decode($value));
     }
 
     /**
