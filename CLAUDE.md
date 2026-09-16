@@ -110,6 +110,7 @@ No `domains` column — see the zero-config note in §1; domain-to-provider matc
 - Map these to clear, user-safe JSON error responses (no raw protocol stack traces leaked to the frontend); log full details server-side (`Log::error` with context, **never log raw passwords**).
 - Set explicit connection/read timeouts on the IMAP client (don't rely on PHP defaults) so a hung mail server can't hang a request indefinitely.
 - Distinguish, at minimum: connection/network failure vs. authentication failure vs. unexpected/server error — the frontend needs to show different messages for each.
+- **Real-world lesson (found testing against actual IranServer):** `webklex/laravel-imap`'s own `AuthFailedException` is only thrown when the library's internal response-validation check fails — it is **not** guaranteed for every server. IranServer instead rejects a bad `LOGIN` with a generic `ImapServerErrorException` carrying `NO [AUTHENTICATIONFAILED] ...` in its message. `EmailAuthService` therefore also catches `ImapServerErrorException` and inspects the RFC 5530 response code inside the message (`AUTHENTICATIONFAILED`, `AUTHORIZATIONFAILED`, `EXPIRED`, `PRIVACYREQUIRED` → auth failure; anything else → connection/server error). **Apply the same pattern in Phase 2/4** when adding folder-fetch and SMTP-send error handling — don't assume a library's "expected" exception type covers every real server's actual wire behavior; verify against IranServer directly.
 
 ---
 
@@ -162,7 +163,7 @@ Work phase-by-phase. Do not start a phase's frontend/backend work until the prev
 - [x] `EmailAccountController` (thin): `index`, `store` (handshake → persist only on success), `update` (re-handshake with a new password, resets `needs_reauth`), `destroy` (hard delete) — all scoped to `auth()->user()`, `throttle:10,1` on store/update
 - [x] Exception classes `ImapConnectionException` / `ImapAuthenticationException` mapped to `422` (auth) / `503` (connection) JSON responses
 - [x] Feature tests (19 passing): register/login/logout, unauthenticated → 401, successful handshake → 201 + encrypted password stored, auth failure → 422 + nothing stored, connection failure → 503 + nothing stored, duplicate email → 422 validation, per-user account isolation, re-auth flow (`needs_reauth` set/cleared), ownership checks on update/destroy (403 for other users' accounts), `restrictOnDelete` on `mail_servers`
-- **Checkpoint met:** can register/log in, POST an email+password to `/api/email-accounts`, get a live IMAP handshake result, and see the account row persisted (owned by that user) with an encrypted password. Verified against the automated test suite (mocked IMAP client) and a manual smoke test of register/login/list over HTTP; **not yet verified against a real IranServer mailbox** — do that before considering Phase 1 fully done.
+- **Checkpoint met — verified against a real IranServer mailbox (Postman):** wrong password → `422` (`"The email address or password was rejected by the mail server."`); correct real credentials → `201` with `status: "active"`, `last_verified_at` set, no `password` field in the response. Phase 1 is fully done.
 
 ### Phase 2 — Fetching & handling emails via IMAP
 - [ ] `ImapClientService` (or interface + IranServer/webklex implementation) — list folders, list messages (paginated), fetch single message (headers + body)
@@ -268,9 +269,11 @@ cd backend
 | 12 | `imap_encryption` / `smtp_encryption` | `ENUM('ssl','tls')` at the DB level, not free-form `VARCHAR` — a genuinely closed, stable set (§3.2) |
 | 13 | App-level auth mechanism | Laravel Sanctum personal access tokens (Bearer), not cookie-based SPA auth — simpler for a separately-hosted SPA in a 2-day MVP (§4.1) |
 | 14 | API JSON envelope | `JsonResource::withoutWrapping()` — responses are flat (no `data` envelope) for a simpler frontend contract |
+| 15 | Auth-failure detection for real servers | `EmailAuthService` also catches `ImapServerErrorException` and parses its RFC 5530 response code, because real-world testing showed IranServer doesn't always throw the library's own `AuthFailedException` for bad credentials (§3.5) |
+| 16 | Handshake failure logging | Added `Log::error` with exception class/message (and any wrapped previous exception) on every handshake failure — an earlier gap meant a real failure left nothing in `laravel.log` to debug from (§3.5) |
 
 Decisions can be revisited per phase — if something changes, update the relevant section above **and** add a row/note here so the log stays the source of truth.
 
 ---
 
-*Last updated: Phase 1 implemented (migrations, models, seeder, `EmailAuthService`, auth + email-account controllers, 19 passing feature tests). Not yet verified against a real IranServer mailbox — do that, then move to Phase 2. Branching strategy (§8, item 5) still unconfirmed. Update the checkboxes and this line as phases complete.*
+*Last updated: **Phase 1 complete and verified against a real IranServer mailbox** (correct password → 201/active; wrong password → 422) over Postman. 21 passing feature tests. Ready to start Phase 2. Branching strategy (§8, item 5) still unconfirmed. Update the checkboxes and this line as phases complete.*
