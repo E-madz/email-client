@@ -300,6 +300,46 @@ class ComposeControllerTest extends TestCase
         $this->assertDatabaseMissing('messages', ['id' => $draft->id]);
     }
 
+    /**
+     * Real-world lesson (§8 item 67): `postJson()` in the tests above sends
+     * `draft_message_id` as a genuine JSON integer, but the real frontend
+     * always submits this endpoint as `multipart/form-data` (it also accepts
+     * file attachments), where every field — including this one — arrives as
+     * a string even after the `integer` validation rule confirms it's
+     * numeric. `deleteSentDraft(int $draftId)`'s strict type hint threw a
+     * `TypeError` the moment a real browser request hit it. Reproduced here
+     * via a genuine multipart request (`$this->call()`, not `postJson()`),
+     * not the JSON shortcut every other test in this class uses.
+     */
+    public function test_sending_a_draft_via_a_real_multipart_request_removes_it(): void
+    {
+        $this->mockSuccessfulSend();
+        $this->mockSuccessfulImapAppend();
+
+        $user = User::factory()->create();
+        $account = EmailAccount::factory()->for($user)->create();
+        Folder::factory()->for($account)->create(['name' => 'Sent', 'type' => 'sent']);
+        $drafts = Folder::factory()->for($account)->create(['name' => 'Drafts', 'type' => 'drafts']);
+        $draft = Message::factory()->for($drafts)->create();
+
+        $response = $this->actingAs($user, 'sanctum')->call(
+            'POST',
+            "/api/email-accounts/{$account->id}/messages",
+            [
+                'to' => ['friend@example.com'],
+                'subject' => 'Finally sending this',
+                'body_html' => '<p>Hi</p>',
+                'draft_message_id' => (string) $draft->id,
+            ],
+            [],
+            [],
+            ['HTTP_Accept' => 'application/json'],
+        );
+
+        $response->assertCreated();
+        $this->assertDatabaseMissing('messages', ['id' => $draft->id]);
+    }
+
     public function test_a_draft_from_another_account_cannot_be_referenced_when_sending(): void
     {
         $user = User::factory()->create();

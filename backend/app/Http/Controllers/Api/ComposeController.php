@@ -58,8 +58,11 @@ class ComposeController extends Controller
 
         $draftId = $request->validated('draft_message_id');
 
+        // Multipart form fields (this endpoint accepts attachments) always
+        // arrive as strings, even after validation as 'integer' — Laravel's
+        // integer rule only checks the string is numeric, it doesn't cast it.
         if ($draftId !== null) {
-            $this->deleteSentDraft($draftId);
+            $this->deleteSentDraft((int) $draftId);
         }
 
         return (new MessageDetailResource($message->loadMissing('attachments')))->response()->setStatusCode(201);
