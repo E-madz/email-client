@@ -12,13 +12,19 @@ namespace App\Services\Mail;
  */
 final class FolderTypeMapper
 {
+    /**
+     * Deliberately the official English folder names (matching the mail
+     * server's/Roundcube's own labels), not a Persian translation — the user
+     * asked to see the folders' real, recognizable names rather than a
+     * localized label, even though the rest of the UI is Persian/RTL (§8).
+     */
     private const DISPLAY_NAMES = [
-        'inbox' => 'صندوق ورودی',
-        'sent' => 'ارسال‌شده‌ها',
-        'drafts' => 'پیش‌نویس‌ها',
-        'trash' => 'سطل زباله',
-        'spam' => 'هرزنامه',
-        'archive' => 'بایگانی',
+        'inbox' => 'Inbox',
+        'sent' => 'Sent',
+        'drafts' => 'Drafts',
+        'trash' => 'Trash',
+        'spam' => 'Spam',
+        'archive' => 'Archive',
     ];
 
     /**

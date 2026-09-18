@@ -1,8 +1,9 @@
 <script setup>
-import { watch, onMounted } from 'vue'
+import { watch, onMounted, computed } from 'vue'
 import { useFoldersStore } from '../stores/folders'
 import LoadingSpinner from './LoadingSpinner.vue'
 import ErrorBanner from './ErrorBanner.vue'
+import FolderTreeItem from './FolderTreeItem.vue'
 
 const props = defineProps({
   accountId: { type: Number, default: null },
@@ -24,6 +25,52 @@ const FOLDER_ICONS = {
     'M20.25 7.5 18.75 6H5.25L3.75 7.5m16.5 0v10.5A1.5 1.5 0 0 1 18.75 19.5H5.25a1.5 1.5 0 0 1-1.5-1.5V7.5m16.5 0h-16.5m6.75 3h3',
   custom: 'M3.75 9.75h16.5M3.75 9.75V19.5a1.5 1.5 0 0 0 1.5 1.5h13.5a1.5 1.5 0 0 0 1.5-1.5V9.75M3.75 9.75l1.5-5.25h13.5l1.5 5.25',
 }
+
+/**
+ * Builds a display-only tree from the flat folder list the backend returns
+ * (CLAUDE.md §3.3 — folders are stored/synced flat, no parent_id column).
+ * A folder's parent is inferred from its own raw IMAP `name`: e.g.
+ * "INBOX.spam" nests under "INBOX" because "INBOX" + one of the common
+ * hierarchy delimiters (".", "/") is a literal prefix of its name. This
+ * mirrors what the mail server/Roundcube actually shows (spam as a child of
+ * Inbox) without needing to persist or sync any hierarchy ourselves — a
+ * folder whose inferred parent doesn't actually exist in the list just stays
+ * top-level instead of inventing structure.
+ */
+function buildFolderTree(items) {
+  const byName = new Map(items.map((folder) => [folder.name, folder]))
+  const childrenByParentId = new Map()
+  const roots = []
+
+  function findParent(folder) {
+    for (const delimiter of ['.', '/']) {
+      const index = folder.name.lastIndexOf(delimiter)
+      if (index > 0) {
+        const parent = byName.get(folder.name.slice(0, index))
+        if (parent) return parent
+      }
+    }
+    return null
+  }
+
+  for (const folder of items) {
+    const parent = findParent(folder)
+    if (parent) {
+      if (!childrenByParentId.has(parent.id)) childrenByParentId.set(parent.id, [])
+      childrenByParentId.get(parent.id).push(folder)
+    } else {
+      roots.push(folder)
+    }
+  }
+
+  function attach(folder) {
+    return { ...folder, children: (childrenByParentId.get(folder.id) ?? []).map(attach) }
+  }
+
+  return roots.map(attach)
+}
+
+const folderTree = computed(() => buildFolderTree(folders.items))
 
 function loadFolders() {
   if (props.accountId) {
@@ -85,27 +132,14 @@ onMounted(loadFolders)
     <p v-else-if="!folders.items.length" class="px-1 text-sm text-gray-400">پوشه‌ای یافت نشد.</p>
 
     <ul v-else class="space-y-0.5">
-      <li v-for="folder in folders.items" :key="folder.id">
-        <button
-          type="button"
-          class="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-sm transition"
-          :class="
-            folder.id === folders.activeId ? 'bg-indigo-50 font-medium text-indigo-700' : 'text-gray-700 hover:bg-gray-100'
-          "
-          @click="selectFolder(folder.id)"
-        >
-          <svg class="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true">
-            <path stroke-linecap="round" stroke-linejoin="round" :d="FOLDER_ICONS[folder.type] ?? FOLDER_ICONS.custom" />
-          </svg>
-          <span class="flex-1 truncate text-right">{{ folder.display_name }}</span>
-          <span
-            v-if="folder.unread_count > 0"
-            class="rounded-full bg-indigo-600 px-1.5 py-0.5 text-[10px] font-semibold text-white"
-          >
-            {{ folder.unread_count }}
-          </span>
-        </button>
-      </li>
+      <FolderTreeItem
+        v-for="folder in folderTree"
+        :key="folder.id"
+        :folder="folder"
+        :active-id="folders.activeId"
+        :icons="FOLDER_ICONS"
+        @select="selectFolder"
+      />
     </ul>
   </div>
 </template>

@@ -75,7 +75,7 @@ class FolderControllerTest extends TestCase
         $names = collect($response->json())->keyBy('name');
 
         $this->assertSame('spam', $names['INBOX.spam']['type']);
-        $this->assertSame('هرزنامه', $names['INBOX.spam']['display_name']);
+        $this->assertSame('Spam', $names['INBOX.spam']['display_name']);
         $this->assertSame('sent', $names['INBOX.Sent']['type']);
     }
 
@@ -106,7 +106,7 @@ class FolderControllerTest extends TestCase
         $names = collect($response->json())->keyBy('name');
 
         $this->assertSame('spam', $names['INBOX.spam']['type']);
-        $this->assertSame('هرزنامه', $names['INBOX.spam']['display_name']);
+        $this->assertSame('Spam', $names['INBOX.spam']['display_name']);
         $this->assertSame('custom', $names['Junk']['type']);
         $this->assertSame('Junk', $names['Junk']['display_name']);
 
