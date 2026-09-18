@@ -4,9 +4,9 @@ import { useMessagesStore } from './messages'
 
 function emptyDraft() {
   return {
-    to: '',
-    cc: '',
-    bcc: '',
+    to: [],
+    cc: [],
+    bcc: [],
     subject: '',
     bodyText: '',
     attachments: [],
@@ -81,7 +81,7 @@ export const useComposeStore = defineStore('compose', {
       this.accountId = accountId
       this.draft = {
         ...emptyDraft(),
-        to: message.from?.email ?? '',
+        to: message.from?.email ? [message.from.email] : [],
         subject: message.subject?.startsWith('Re:') ? message.subject : `Re: ${message.subject ?? ''}`,
         bodyText: quote(message),
       }
@@ -115,9 +115,9 @@ export const useComposeStore = defineStore('compose', {
     openDraft(accountId, message) {
       this.accountId = accountId
       this.draft = {
-        to: (message.to ?? []).map((r) => r.email).join(', '),
-        cc: (message.cc ?? []).map((r) => r.email).join(', '),
-        bcc: (message.bcc ?? []).map((r) => r.email).join(', '),
+        to: (message.to ?? []).map((r) => r.email),
+        cc: (message.cc ?? []).map((r) => r.email),
+        bcc: (message.bcc ?? []).map((r) => r.email),
         subject: message.subject ?? '',
         bodyText: plainTextFromMessage(message),
         attachments: [],
@@ -159,9 +159,9 @@ export const useComposeStore = defineStore('compose', {
 
     buildFormData() {
       const formData = new FormData()
-      splitEmails(this.draft.to).forEach((email) => formData.append('to[]', email))
-      splitEmails(this.draft.cc).forEach((email) => formData.append('cc[]', email))
-      splitEmails(this.draft.bcc).forEach((email) => formData.append('bcc[]', email))
+      this.draft.to.forEach((email) => formData.append('to[]', email))
+      this.draft.cc.forEach((email) => formData.append('cc[]', email))
+      this.draft.bcc.forEach((email) => formData.append('bcc[]', email))
       formData.append('subject', this.draft.subject)
       formData.append('body_html', this.buildBodyHtml())
       this.draft.attachments.forEach((file) => formData.append('attachments[]', file))
@@ -223,10 +223,3 @@ export const useComposeStore = defineStore('compose', {
     },
   },
 })
-
-function splitEmails(value) {
-  return value
-    .split(',')
-    .map((email) => email.trim())
-    .filter(Boolean)
-}

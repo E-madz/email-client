@@ -1,8 +1,11 @@
 <script setup>
+import { ref } from 'vue'
 import { useComposeStore } from '../stores/compose'
+import EmailTagInput from './EmailTagInput.vue'
 import ErrorBanner from './ErrorBanner.vue'
 
 const compose = useComposeStore()
+const validationMessage = ref('')
 
 function handleFileChange(event) {
   compose.addAttachments(Array.from(event.target.files ?? []))
@@ -16,6 +19,12 @@ function formatSize(bytes) {
 }
 
 async function handleSubmit() {
+  if (compose.mode !== 'draft' && compose.draft.to.length === 0) {
+    validationMessage.value = 'وارد کردن حداقل یک گیرنده الزامی است.'
+    return
+  }
+  validationMessage.value = ''
+
   try {
     await compose.send()
   } catch {
@@ -64,43 +73,24 @@ const titles = {
 
       <form class="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-5 py-4" @submit.prevent="handleSubmit">
         <ErrorBanner
-          v-if="compose.error"
-          :message="compose.error?.message ?? 'ارسال ایمیل با خطا مواجه شد.'"
+          v-if="compose.error || validationMessage"
+          :message="validationMessage || compose.error?.message || 'ارسال ایمیل با خطا مواجه شد.'"
           :show-retry="false"
         />
 
         <label class="block">
           <span class="mb-1 block text-xs font-medium text-gray-500">گیرنده</span>
-          <input
-            v-model="compose.draft.to"
-            type="text"
-            dir="ltr"
-            :required="compose.mode !== 'draft'"
-            placeholder="a@example.com, b@example.com"
-            class="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-          />
+          <EmailTagInput v-model="compose.draft.to" placeholder="یک آدرس ایمیل بنویسید و Enter بزنید" />
         </label>
 
         <div class="grid grid-cols-2 gap-3">
           <label class="block">
             <span class="mb-1 block text-xs font-medium text-gray-500">رونوشت (CC)</span>
-            <input
-              v-model="compose.draft.cc"
-              type="text"
-              dir="ltr"
-              placeholder="a@example.com, b@example.com"
-              class="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-            />
+            <EmailTagInput v-model="compose.draft.cc" placeholder="یک آدرس ایمیل بنویسید و Enter بزنید" />
           </label>
           <label class="block">
             <span class="mb-1 block text-xs font-medium text-gray-500">رونوشت مخفی (BCC)</span>
-            <input
-              v-model="compose.draft.bcc"
-              type="text"
-              dir="ltr"
-              placeholder="a@example.com, b@example.com"
-              class="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-            />
+            <EmailTagInput v-model="compose.draft.bcc" placeholder="یک آدرس ایمیل بنویسید و Enter بزنید" />
           </label>
         </div>
 
