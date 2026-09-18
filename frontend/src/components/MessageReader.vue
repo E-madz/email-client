@@ -38,13 +38,23 @@ function deleteMessage() {
 
 // Sent/Drafts only ever hold what the system itself put there — moving an
 // arbitrary message into either would misrepresent it, so the backend
-// rejects it too (§8 item 66).
+// rejects it too (§8 item 66). A message the account sent also can't
+// retroactively become something it received, so Inbox/Spam are excluded
+// too when the selected message is itself Sent/Drafts (§8 item 68).
 const UNMOVABLE_TARGET_TYPES = ['sent', 'drafts']
-const moveTargets = computed(() =>
-  folders.items.filter(
-    (folder) => folder.id !== messages.selected?.folder_id && !UNMOVABLE_TARGET_TYPES.includes(folder.type),
-  ),
-)
+const OUTBOUND_TYPES = ['sent', 'drafts']
+const INBOUND_TYPES = ['inbox', 'spam']
+const moveTargets = computed(() => {
+  const sourceFolder = folders.items.find((item) => item.id === messages.selected?.folder_id)
+  const alsoExcluded = OUTBOUND_TYPES.includes(sourceFolder?.type) ? INBOUND_TYPES : []
+
+  return folders.items.filter(
+    (folder) =>
+      folder.id !== messages.selected?.folder_id &&
+      !UNMOVABLE_TARGET_TYPES.includes(folder.type) &&
+      !alsoExcluded.includes(folder.type),
+  )
+})
 // A draft has its own lifecycle (edit/send/delete) — it can't be moved to an
 // arbitrary folder via this generic action. In practice a draft is opened in
 // the composer, not here, but a starred draft could still surface in this

@@ -103,16 +103,29 @@ function deleteMessage(event, message) {
 // sent message, a saved draft) — moving an arbitrary message into either
 // would misrepresent it, so the backend rejects it too (§8 item 66).
 const UNMOVABLE_TARGET_TYPES = ['sent', 'drafts']
+// A message the account sent (`sent`/`drafts`) can't retroactively become
+// something it received (`inbox`/`spam`) — the backend enforces this
+// symmetrically in both directions (§8 item 68); the frontend only needs
+// the outbound-source case here since inbound targets are the only ones
+// that aren't already excluded by UNMOVABLE_TARGET_TYPES above.
+const OUTBOUND_TYPES = ['sent', 'drafts']
+const INBOUND_TYPES = ['inbox', 'spam']
 
 /**
  * Folders a message could be moved to — every real folder except the one
- * it's currently in and Sent/Drafts. Starred is never a candidate since
- * it's a virtual view, not a real folder (it's not part of `folders.items`
- * at all).
+ * it's currently in, Sent/Drafts, and (for a message the account itself
+ * sent) Inbox/Spam. Starred is never a candidate since it's a virtual view,
+ * not a real folder (it's not part of `folders.items` at all).
  */
 function moveTargets(message) {
+  const sourceType = folderTypeOf(message.folder_id ?? props.folderId)
+  const alsoExcluded = OUTBOUND_TYPES.includes(sourceType) ? INBOUND_TYPES : []
+
   return folders.items.filter(
-    (folder) => folder.id !== (message.folder_id ?? props.folderId) && !UNMOVABLE_TARGET_TYPES.includes(folder.type),
+    (folder) =>
+      folder.id !== (message.folder_id ?? props.folderId) &&
+      !UNMOVABLE_TARGET_TYPES.includes(folder.type) &&
+      !alsoExcluded.includes(folder.type),
   )
 }
 

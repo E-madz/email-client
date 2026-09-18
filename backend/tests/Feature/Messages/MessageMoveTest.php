@@ -171,4 +171,125 @@ class MessageMoveTest extends TestCase
         $response->assertStatus(422);
         $this->assertDatabaseHas('messages', ['id' => $draft->id, 'folder_id' => $drafts->id]);
     }
+
+    /**
+     * §8 item 68 — a Sent message was never received, so moving it into an
+     * "inbound" folder (Inbox/Spam) would misrepresent its origin. Reported
+     * directly by the user against a real account: moving Sent → Inbox
+     * "made no sense."
+     */
+    public function test_moving_a_sent_message_into_the_inbox_is_rejected(): void
+    {
+        $user = User::factory()->create();
+        $account = EmailAccount::factory()->for($user)->create();
+        $sent = Folder::factory()->for($account)->create(['name' => 'Sent', 'type' => 'sent']);
+        $inbox = Folder::factory()->for($account)->create(['name' => 'INBOX', 'type' => 'inbox']);
+        $message = Message::factory()->for($sent)->create();
+
+        $response = $this->actingAs($user, 'sanctum')->patchJson("/api/messages/{$message->id}/move", [
+            'folder_id' => $inbox->id,
+        ]);
+
+        $response->assertStatus(422);
+        $this->assertDatabaseHas('messages', ['id' => $message->id, 'folder_id' => $sent->id]);
+    }
+
+    public function test_moving_a_sent_message_into_spam_is_rejected(): void
+    {
+        $user = User::factory()->create();
+        $account = EmailAccount::factory()->for($user)->create();
+        $sent = Folder::factory()->for($account)->create(['name' => 'Sent', 'type' => 'sent']);
+        $spam = Folder::factory()->for($account)->create(['name' => 'Junk', 'type' => 'spam']);
+        $message = Message::factory()->for($sent)->create();
+
+        $response = $this->actingAs($user, 'sanctum')->patchJson("/api/messages/{$message->id}/move", [
+            'folder_id' => $spam->id,
+        ]);
+
+        $response->assertStatus(422);
+        $this->assertDatabaseHas('messages', ['id' => $message->id, 'folder_id' => $sent->id]);
+    }
+
+    /**
+     * A Sent message can still be archived/trashed/organized — only the
+     * inbound-folder crossing is blocked (§8 item 68), not every move.
+     */
+    public function test_moving_a_sent_message_into_archive_is_allowed(): void
+    {
+        $user = User::factory()->create();
+        $account = EmailAccount::factory()->for($user)->create();
+        $sent = Folder::factory()->for($account)->create(['name' => 'Sent', 'type' => 'sent']);
+        $archive = Folder::factory()->for($account)->create(['name' => 'Archive', 'type' => 'archive']);
+        $message = Message::factory()->for($sent)->create(['uid' => 5]);
+
+        $movedImapMessage = $this->mockImapMessage(['uid' => 99]);
+        $imapMessage = $this->mockImapMessage(['uid' => 5]);
+        $imapMessage->shouldReceive('move')->with('Archive', expunge: true)->once()->andReturn($movedImapMessage);
+
+        $whereQuery = Mockery::mock(WhereQuery::class);
+        $whereQuery->shouldReceive('whereUid')->andReturnSelf();
+        $whereQuery->shouldReceive('leaveUnread')->andReturnSelf();
+        $whereQuery->shouldReceive('get')->andReturn(MessageCollection::make([$imapMessage]));
+
+        $imapFolder = Mockery::mock(ImapFolder::class);
+        $imapFolder->shouldReceive('query')->andReturn($whereQuery);
+
+        $client = Mockery::mock(Client::class);
+        $client->shouldReceive('connect')->andReturnSelf();
+        $client->shouldReceive('disconnect')->andReturnSelf();
+        $client->shouldReceive('getFolderByPath')->with('Sent')->andReturn($imapFolder);
+
+        $this->mock(ClientManager::class, function (MockInterface $mock) use ($client) {
+            $mock->shouldReceive('make')->andReturn($client);
+        });
+
+        $response = $this->actingAs($user, 'sanctum')->patchJson("/api/messages/{$message->id}/move", [
+            'folder_id' => $archive->id,
+        ]);
+
+        $response->assertOk();
+        $this->assertDatabaseHas('messages', ['id' => $message->id, 'folder_id' => $archive->id]);
+    }
+
+    /**
+     * Restoring a message from Trash back to the Inbox stays allowed — Trash
+     * is a neutral staging folder, not an "outbound" one, so it never
+     * triggers the inbound/outbound restriction (§8 item 68).
+     */
+    public function test_moving_a_message_from_trash_into_the_inbox_is_allowed(): void
+    {
+        $user = User::factory()->create();
+        $account = EmailAccount::factory()->for($user)->create();
+        $trash = Folder::factory()->for($account)->create(['name' => 'Trash', 'type' => 'trash']);
+        $inbox = Folder::factory()->for($account)->create(['name' => 'INBOX', 'type' => 'inbox']);
+        $message = Message::factory()->for($trash)->create(['uid' => 5]);
+
+        $movedImapMessage = $this->mockImapMessage(['uid' => 99]);
+        $imapMessage = $this->mockImapMessage(['uid' => 5]);
+        $imapMessage->shouldReceive('move')->with('INBOX', expunge: true)->once()->andReturn($movedImapMessage);
+
+        $whereQuery = Mockery::mock(WhereQuery::class);
+        $whereQuery->shouldReceive('whereUid')->andReturnSelf();
+        $whereQuery->shouldReceive('leaveUnread')->andReturnSelf();
+        $whereQuery->shouldReceive('get')->andReturn(MessageCollection::make([$imapMessage]));
+
+        $imapFolder = Mockery::mock(ImapFolder::class);
+        $imapFolder->shouldReceive('query')->andReturn($whereQuery);
+
+        $client = Mockery::mock(Client::class);
+        $client->shouldReceive('connect')->andReturnSelf();
+        $client->shouldReceive('disconnect')->andReturnSelf();
+        $client->shouldReceive('getFolderByPath')->with('Trash')->andReturn($imapFolder);
+
+        $this->mock(ClientManager::class, function (MockInterface $mock) use ($client) {
+            $mock->shouldReceive('make')->andReturn($client);
+        });
+
+        $response = $this->actingAs($user, 'sanctum')->patchJson("/api/messages/{$message->id}/move", [
+            'folder_id' => $inbox->id,
+        ]);
+
+        $response->assertOk();
+        $this->assertDatabaseHas('messages', ['id' => $message->id, 'folder_id' => $inbox->id]);
+    }
 }

@@ -47,6 +47,22 @@ function handleDropMessage({ folderId, messageId }) {
   messages.moveMessage(messageId, folderId)
 }
 
+const renamingFolderId = ref(null)
+const renameError = ref(null)
+
+async function handleRenameFolder({ folder, name }) {
+  renamingFolderId.value = folder.id
+  renameError.value = null
+
+  try {
+    await folders.renameFolder(folder.id, name)
+  } catch (error) {
+    renameError.value = error
+  } finally {
+    renamingFolderId.value = null
+  }
+}
+
 const deletingFolderId = ref(null)
 const deleteError = ref(null)
 
@@ -256,9 +272,11 @@ onMounted(loadFolders)
           :active-id="folders.activeId"
           :icons="FOLDER_ICONS"
           :deleting-id="deletingFolderId"
+          :renaming-id="renamingFolderId"
           @select="selectFolder"
           @drop-message="handleDropMessage"
           @delete="handleDeleteFolder"
+          @rename="handleRenameFolder"
         />
       </ul>
 
@@ -277,14 +295,19 @@ onMounted(loadFolders)
             :active-id="folders.activeId"
             :icons="FOLDER_ICONS"
             :deleting-id="deletingFolderId"
+            :renaming-id="renamingFolderId"
             @select="selectFolder"
             @drop-message="handleDropMessage"
             @delete="handleDeleteFolder"
+            @rename="handleRenameFolder"
           />
         </ul>
       </template>
     </template>
 
+    <p v-if="renameError" class="mt-1.5 px-1 text-xs text-red-600">
+      {{ renameError?.message ?? 'تغییر نام پوشه با خطا مواجه شد.' }}
+    </p>
     <p v-if="deleteError" class="mt-1.5 px-1 text-xs text-red-600">
       {{ deleteError?.message ?? 'حذف پوشه با خطا مواجه شد.' }}
     </p>

@@ -8,6 +8,7 @@ use App\Exceptions\Mail\ImapAuthenticationException;
 use App\Exceptions\Mail\ImapConnectionException;
 use App\Http\Controllers\Concerns\HandlesImapMailExceptions;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Folders\RenameFolderRequest;
 use App\Http\Requests\Folders\StoreFolderRequest;
 use App\Http\Resources\FolderResource;
 use App\Http\Resources\MessageResource;
@@ -15,6 +16,7 @@ use App\Models\EmailAccount;
 use App\Models\Folder;
 use App\Services\Mail\FolderCreationService;
 use App\Services\Mail\FolderDeletionService;
+use App\Services\Mail\FolderRenameService;
 use App\Services\Mail\FolderSyncService;
 use App\Services\Mail\MessageDeletionService;
 use App\Services\Mail\MessageSyncService;
@@ -31,6 +33,7 @@ class FolderController extends Controller
         private readonly MessageDeletionService $messageDeletionService,
         private readonly FolderCreationService $folderCreationService,
         private readonly FolderDeletionService $folderDeletionService,
+        private readonly FolderRenameService $folderRenameService,
     ) {
         //
     }
@@ -103,6 +106,28 @@ class FolderController extends Controller
         }
 
         return response()->json(['deleted' => $deleted]);
+    }
+
+    /**
+     * Rename a folder the user created — a real IMAP `RENAME`, only mirrored
+     * locally once the server confirms it. Restricted to `type === 'custom'`,
+     * the same guard as deletion: a system folder's name is what the server
+     * actually calls it, and renaming it locally without renaming the real
+     * mailbox would desync `folders.name` from what `SELECT`/`EXAMINE`
+     * actually needs to address it.
+     */
+    public function rename(RenameFolderRequest $request, Folder $folder): JsonResponse
+    {
+        abort_unless($folder->emailAccount->user_id === $request->user()->id, 403);
+        abort_unless($folder->type === 'custom', 422, 'Only folders you created yourself can be renamed.');
+
+        try {
+            $folder = $this->folderRenameService->rename($folder, $request->validated('name'));
+        } catch (ImapAuthenticationException|ImapConnectionException $e) {
+            return $this->respondToImapFailure($folder->emailAccount, $e);
+        }
+
+        return (new FolderResource($folder))->response();
     }
 
     /**

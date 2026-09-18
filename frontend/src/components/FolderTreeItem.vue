@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, nextTick } from 'vue'
 
 const props = defineProps({
   folder: { type: Object, required: true },
@@ -7,9 +7,38 @@ const props = defineProps({
   activeId: { type: [Number, String], default: null },
   icons: { type: Object, required: true },
   deletingId: { type: [Number, String], default: null },
+  renamingId: { type: [Number, String], default: null },
 })
 
-const emit = defineEmits(['select', 'drop-message', 'delete'])
+const emit = defineEmits(['select', 'drop-message', 'delete', 'rename'])
+
+const isRenaming = ref(false)
+const renameValue = ref('')
+const renameInput = ref(null)
+
+async function startRenaming() {
+  isRenaming.value = true
+  renameValue.value = props.folder.display_name
+  await nextTick()
+  renameInput.value?.focus()
+  renameInput.value?.select()
+}
+
+function cancelRenaming() {
+  isRenaming.value = false
+}
+
+function submitRename() {
+  // Guards against firing twice — Enter's @submit already calls this and
+  // sets isRenaming false, which then triggers the input's own blur event.
+  if (!isRenaming.value) return
+
+  const name = renameValue.value.trim()
+  isRenaming.value = false
+  if (!name || name === props.folder.display_name) return
+
+  emit('rename', { folder: props.folder, name })
+}
 
 // Starred is a virtual, cross-folder view (CLAUDE.md §8) — a message can't
 // be "moved into" it, so it's not a valid drop target. Sent/Drafts are real
@@ -48,6 +77,7 @@ function handleDrop(event) {
       @drop="handleDrop"
     >
       <button
+        v-if="!isRenaming"
         type="button"
         class="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-sm"
         :style="{ paddingInlineStart: `${0.5 + depth * 1.25}rem` }"
@@ -65,8 +95,47 @@ function handleDrop(event) {
         </span>
       </button>
 
+      <form
+        v-else
+        class="flex min-w-0 flex-1 items-center gap-2 py-1"
+        :style="{ paddingInlineStart: `${0.5 + depth * 1.25}rem` }"
+        @submit.prevent="submitRename"
+      >
+        <svg class="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" :d="icons[folder.type] ?? icons.custom" />
+        </svg>
+        <input
+          ref="renameInput"
+          v-model="renameValue"
+          type="text"
+          dir="ltr"
+          :disabled="renamingId === folder.id"
+          class="min-w-0 flex-1 rounded border border-indigo-300 px-1.5 py-0.5 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+          @keydown.escape="cancelRenaming"
+          @blur="submitRename"
+          @click.stop
+        />
+      </form>
+
       <button
-        v-if="folder.type === 'custom'"
+        v-if="folder.type === 'custom' && !isRenaming"
+        type="button"
+        :disabled="renamingId === folder.id"
+        class="mr-1 shrink-0 rounded p-1 text-gray-300 opacity-0 group-hover:opacity-100 hover:bg-gray-200 hover:text-indigo-500 focus:opacity-100 disabled:cursor-wait disabled:opacity-100"
+        aria-label="تغییر نام پوشه"
+        @click.stop="startRenaming"
+      >
+        <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true">
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L6.832 18.82a4.5 4.5 0 0 1-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 0 1 1.13-1.897L16.863 4.487Zm0 0L19.5 7.125"
+          />
+        </svg>
+      </button>
+
+      <button
+        v-if="folder.type === 'custom' && !isRenaming"
         type="button"
         :disabled="deletingId === folder.id"
         class="mr-1 shrink-0 rounded p-1 text-gray-300 opacity-0 group-hover:opacity-100 hover:bg-gray-200 hover:text-red-500 focus:opacity-100 disabled:cursor-wait disabled:opacity-100"
@@ -92,9 +161,11 @@ function handleDrop(event) {
         :active-id="activeId"
         :icons="icons"
         :deleting-id="deletingId"
+        :renaming-id="renamingId"
         @select="(id) => emit('select', id)"
         @drop-message="(payload) => emit('drop-message', payload)"
         @delete="(folder) => emit('delete', folder)"
+        @rename="(payload) => emit('rename', payload)"
       />
     </ul>
   </li>

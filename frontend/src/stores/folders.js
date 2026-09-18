@@ -79,6 +79,16 @@ export const useFoldersStore = defineStore('folders', {
     },
 
     /**
+     * A real IMAP `RENAME` (see FolderRenameService) — only custom folders
+     * can be renamed this way, same restriction as deletion.
+     */
+    async renameFolder(folderId, name) {
+      const updated = await api.patch(`/folders/${folderId}`, { name })
+      this.items = this.items.map((folder) => (folder.id === folderId ? updated : folder))
+      return updated
+    },
+
+    /**
      * A real IMAP `DELETE` (see FolderDeletionService) — only custom
      * folders can be deleted this way; a non-empty folder's messages are
      * deleted along with it, which the caller is expected to have warned

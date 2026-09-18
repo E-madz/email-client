@@ -30,6 +30,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
         Route::get('/email-accounts/{emailAccount}/folders', [FolderController::class, 'index']);
         Route::post('/email-accounts/{emailAccount}/folders', [FolderController::class, 'store']);
+        Route::patch('/folders/{folder}', [FolderController::class, 'rename']);
         Route::delete('/folders/{folder}', [FolderController::class, 'destroy']);
         Route::post('/folders/{folder}/sync', [FolderController::class, 'sync']);
         Route::get('/messages/{message}', [MessageController::class, 'show']);
