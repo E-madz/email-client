@@ -71,11 +71,18 @@ final class FolderTypeMapper
      */
     public function map(array $attributes, string $name, string $delimiter = '/'): array
     {
-        $type = $this->mapBySpecialUse($attributes) ?? $this->mapByName($name, $delimiter) ?? 'custom';
+        $specialUseType = $this->mapBySpecialUse($attributes);
+        $type = $specialUseType ?? $this->mapByName($name, $delimiter) ?? 'custom';
 
         return [
             'type' => $type,
             'display_name' => self::DISPLAY_NAMES[$type] ?? $name,
+            // Whether `$type` came from the server's own SPECIAL-USE
+            // attribute (RFC 6154) rather than a plain name guess — see
+            // FolderSyncService::dedupeDuplicateTypes(), which trusts this
+            // over a name-only match when two folders claim the same type
+            // (CLAUDE.md §8 item 57).
+            'is_special_use' => $specialUseType !== null,
         ];
     }
 

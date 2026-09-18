@@ -131,17 +131,19 @@ function buildFolderTree(items) {
 const folderTree = computed(() => buildFolderTree(folders.items))
 
 /**
- * Split the tree into system folders (Inbox/Sent/Drafts/Trash/Spam/Archive,
- * plus any real provider folder the server reports that we just couldn't
- * map — see `is_user_created` in the backend, CLAUDE.md §8 item 55) and
- * folders the user created themselves through this app, so the sidebar can
- * show a visual divider between the two groups. Grouping is by each
- * top-level folder's own flag — a user-created folder is never expected to
- * nest under another folder anyway, since new folders are always created
- * top-level (§8 item 52).
+ * Split the tree into system folders (Inbox/Sent/Drafts/Trash/Spam/Archive)
+ * and folders the user created themselves (`type === 'custom'`), so the
+ * sidebar can show a visual divider between the two groups. This is the
+ * same flag `FolderController::destroy` gates deletion on (CLAUDE.md §8
+ * item 57) — correct once `FolderSyncService`'s dedup rule trusts the
+ * server's own SPECIAL-USE attribute over a name-only match, so a folder
+ * that only looks like "spam"/"trash" by name without the real protocol
+ * flag is genuinely `custom` and belongs in this group. A user-created
+ * folder is never expected to nest under another folder anyway, since new
+ * folders are always created top-level (§8 item 52).
  */
-const systemFolderRoots = computed(() => folderTree.value.filter((folder) => !folder.is_user_created))
-const userFolderRoots = computed(() => folderTree.value.filter((folder) => folder.is_user_created))
+const systemFolderRoots = computed(() => folderTree.value.filter((folder) => folder.type !== 'custom'))
+const userFolderRoots = computed(() => folderTree.value.filter((folder) => folder.type === 'custom'))
 
 function loadFolders() {
   if (props.accountId) {

@@ -46,7 +46,7 @@ class FolderDeletionTest extends TestCase
 
         $user = User::factory()->create();
         $account = EmailAccount::factory()->for($user)->create();
-        $folder = Folder::factory()->for($account)->create(['name' => 'Projects', 'type' => 'custom', 'is_user_created' => true]);
+        $folder = Folder::factory()->for($account)->create(['name' => 'Projects', 'type' => 'custom']);
 
         $response = $this->actingAs($user, 'sanctum')->deleteJson("/api/folders/{$folder->id}");
 
@@ -60,7 +60,7 @@ class FolderDeletionTest extends TestCase
 
         $user = User::factory()->create();
         $account = EmailAccount::factory()->for($user)->create();
-        $folder = Folder::factory()->for($account)->create(['name' => 'Projects', 'type' => 'custom', 'is_user_created' => true]);
+        $folder = Folder::factory()->for($account)->create(['name' => 'Projects', 'type' => 'custom']);
         $message = Message::factory()->for($folder)->create();
 
         $response = $this->actingAs($user, 'sanctum')->deleteJson("/api/folders/{$folder->id}");
@@ -82,24 +82,6 @@ class FolderDeletionTest extends TestCase
         $this->assertDatabaseHas('folders', ['id' => $inbox->id]);
     }
 
-    public function test_a_provider_folder_demoted_to_custom_type_cannot_be_deleted(): void
-    {
-        // A real provider folder (e.g. a standalone "Junk") that
-        // FolderTypeMapper couldn't recognize, or that FolderSyncService
-        // demoted to 'custom' per the same-type dedup rule (CLAUDE.md §8
-        // item 38), still isn't something the user created through this app
-        // — `is_user_created` (default false) is what actually gates
-        // deletion, not `type`.
-        $user = User::factory()->create();
-        $account = EmailAccount::factory()->for($user)->create();
-        $junk = Folder::factory()->for($account)->create(['name' => 'Junk', 'type' => 'custom']);
-
-        $response = $this->actingAs($user, 'sanctum')->deleteJson("/api/folders/{$junk->id}");
-
-        $response->assertStatus(422);
-        $this->assertDatabaseHas('folders', ['id' => $junk->id]);
-    }
-
     public function test_folder_deletion_fails_gracefully_on_imap_auth_failure(): void
     {
         $client = Mockery::mock(Client::class);
@@ -112,7 +94,7 @@ class FolderDeletionTest extends TestCase
 
         $user = User::factory()->create();
         $account = EmailAccount::factory()->for($user)->create(['status' => 'active']);
-        $folder = Folder::factory()->for($account)->create(['name' => 'Projects', 'type' => 'custom', 'is_user_created' => true]);
+        $folder = Folder::factory()->for($account)->create(['name' => 'Projects', 'type' => 'custom']);
 
         $response = $this->actingAs($user, 'sanctum')->deleteJson("/api/folders/{$folder->id}");
 
@@ -126,7 +108,7 @@ class FolderDeletionTest extends TestCase
         $user = User::factory()->create();
         $other = User::factory()->create();
         $account = EmailAccount::factory()->for($other)->create();
-        $folder = Folder::factory()->for($account)->create(['name' => 'Projects', 'type' => 'custom', 'is_user_created' => true]);
+        $folder = Folder::factory()->for($account)->create(['name' => 'Projects', 'type' => 'custom']);
 
         $response = $this->actingAs($user, 'sanctum')->deleteJson("/api/folders/{$folder->id}");
 

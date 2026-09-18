@@ -49,7 +49,7 @@ final class FolderSyncService
             $mappedFolders[(string) $name] = [
                 'type' => $mapped['type'],
                 'display_name' => $mapped['display_name'],
-                'is_inbox_child' => $delimiter !== '' && str_starts_with((string) $name, 'INBOX'.$delimiter),
+                'is_special_use' => $mapped['is_special_use'],
             ];
         }
 
@@ -68,21 +68,26 @@ final class FolderSyncService
     }
 
     /**
-     * Real-world lesson (CLAUDE.md §8): some IranServer accounts carry two
-     * folders that independently map to the same non-custom type — e.g. a
-     * top-level "Junk" folder carrying the RFC 6154 SPECIAL-USE \Junk
-     * attribute *and* a separate "INBOX.spam" child folder matched only by
-     * name. The SPECIAL-USE flag isn't reliable as a tie-breaker here: on the
-     * one real account this was found on, the folder actually used day-to-day
-     * (confirmed against the same account's Roundcube folder tree) is the one
-     * nested under INBOX, not the SPECIAL-USE-flagged top-level one. Rather
-     * than show two duplicate-looking "هرزنامه" entries in the sidebar, keep
-     * exactly one canonical folder per type — preferring an INBOX child, then
-     * falling back to whichever came first — and demote every other same-type
-     * folder to `custom` (its own raw name), never dropping any folder.
+     * Real-world lesson (CLAUDE.md §8, revised by item 57): some IranServer
+     * accounts carry two folders that independently map to the same
+     * non-custom type — e.g. a top-level "Junk" folder carrying the RFC 6154
+     * SPECIAL-USE \Junk attribute *and* a separate "INBOX.spam" child folder
+     * matched only by name. An earlier version of this method preferred the
+     * INBOX child as canonical, based on it looking like "the" spam folder on
+     * one account — but the user later confirmed directly against Roundcube
+     * that the *opposite* is true: Roundcube (and the mail server itself)
+     * only refuses to delete the SPECIAL-USE-flagged "Junk" folder, and
+     * happily lets a real folder deletion remove "INBOX.spam" — proving the
+     * name-only match was never actually a protected system folder, just a
+     * regularly-named one. The SPECIAL-USE attribute, read straight from the
+     * IMAP protocol, is the authoritative signal for "is this a real system
+     * folder" — never a name guess. So the canonical folder for a type is
+     * always the SPECIAL-USE-flagged one when one exists; a name-only match
+     * only wins when nothing else claims that type. Every other same-type
+     * folder is demoted to `custom` (its own raw name), never dropped.
      *
-     * @param  array<string, array{type: string, display_name: string, is_inbox_child: bool}>  $mappedFolders
-     * @return array<string, array{type: string, display_name: string, is_inbox_child: bool}>
+     * @param  array<string, array{type: string, display_name: string, is_special_use: bool}>  $mappedFolders
+     * @return array<string, array{type: string, display_name: string, is_special_use: bool}>
      */
     private function dedupeDuplicateTypes(array $mappedFolders): array
     {
@@ -95,7 +100,7 @@ final class FolderSyncService
 
             $currentCanonical = $canonicalNameByType[$mapped['type']] ?? null;
 
-            if ($currentCanonical === null || ($mapped['is_inbox_child'] && ! $mappedFolders[$currentCanonical]['is_inbox_child'])) {
+            if ($currentCanonical === null || ($mapped['is_special_use'] && ! $mappedFolders[$currentCanonical]['is_special_use'])) {
                 $canonicalNameByType[$mapped['type']] = $name;
             }
         }

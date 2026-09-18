@@ -84,10 +84,13 @@ class FolderControllerTest extends TestCase
         // Real-world case found on a live IranServer account: it has both a
         // top-level "Junk" folder carrying the SPECIAL-USE \Junk attribute
         // AND a separate "INBOX.spam" child folder matched only by name.
-        // Confirmed against the same account's Roundcube: the one actually
-        // treated as "the" spam folder there is the INBOX child, and "Junk"
-        // shows up separately under its own raw name — not as a second
-        // "هرزنامه". SPECIAL-USE alone isn't a reliable tie-breaker here.
+        // The user confirmed directly against Roundcube (§8 item 57) that
+        // "Junk" (SPECIAL-USE) is the real, protected system folder there —
+        // Roundcube refuses to delete it — while "INBOX.spam" (name-only
+        // match) is an ordinary folder Roundcube lets them delete. The
+        // SPECIAL-USE attribute read from the protocol is authoritative, so
+        // "Junk" stays canonical `spam` and "INBOX.spam" is demoted to
+        // `custom`.
         $this->mockRawFolderList([
             'Junk' => ['delimiter' => '.', 'flags' => ['\HasNoChildren', '\UnMarked', '\Junk']],
             'Trash' => ['delimiter' => '.', 'flags' => ['\HasNoChildren', '\UnMarked', '\Trash']],
@@ -105,10 +108,10 @@ class FolderControllerTest extends TestCase
         $response->assertOk();
         $names = collect($response->json())->keyBy('name');
 
-        $this->assertSame('spam', $names['INBOX.spam']['type']);
-        $this->assertSame('Spam', $names['INBOX.spam']['display_name']);
-        $this->assertSame('custom', $names['Junk']['type']);
-        $this->assertSame('Junk', $names['Junk']['display_name']);
+        $this->assertSame('spam', $names['Junk']['type']);
+        $this->assertSame('Spam', $names['Junk']['display_name']);
+        $this->assertSame('custom', $names['INBOX.spam']['type']);
+        $this->assertSame('INBOX.spam', $names['INBOX.spam']['display_name']);
 
         // Types with only one candidate are unaffected by the dedup pass.
         $this->assertSame('trash', $names['Trash']['type']);
