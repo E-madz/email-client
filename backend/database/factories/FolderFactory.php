@@ -22,7 +22,7 @@ class FolderFactory extends Factory
             'email_account_id' => EmailAccount::factory(),
             'name' => 'INBOX',
             'type' => 'inbox',
-            'display_name' => 'صندوق ورودی',
+            'display_name' => 'Inbox',
             'uid_validity' => null,
             'last_uid' => 0,
             'last_synced_at' => null,

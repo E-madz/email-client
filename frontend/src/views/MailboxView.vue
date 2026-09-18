@@ -3,15 +3,18 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useAuthStore } from '../stores/auth'
 import { useAccountsStore } from '../stores/accounts'
 import { useMessagesStore } from '../stores/messages'
+import { useComposeStore } from '../stores/compose'
 import AccountSwitcher from '../components/AccountSwitcher.vue'
 import FolderList from '../components/FolderList.vue'
 import MessageList from '../components/MessageList.vue'
 import MessageReader from '../components/MessageReader.vue'
 import LoadingSpinner from '../components/LoadingSpinner.vue'
+import ComposeModal from '../components/ComposeModal.vue'
 
 const auth = useAuthStore()
 const accounts = useAccountsStore()
 const messages = useMessagesStore()
+const compose = useComposeStore()
 
 const activeFolderId = ref(null)
 
@@ -56,6 +59,17 @@ async function handleLogout() {
       </div>
 
       <div class="flex items-center gap-3">
+        <button
+          type="button"
+          :disabled="!activeAccountId"
+          class="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+          @click="compose.open(activeAccountId)"
+        >
+          <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+          </svg>
+          نوشتن ایمیل
+        </button>
         <span class="text-sm text-gray-500">{{ auth.user?.name }}</span>
         <button
           type="button"
@@ -84,5 +98,7 @@ async function handleLogout() {
         <MessageReader />
       </section>
     </div>
+
+    <ComposeModal />
   </div>
 </template>

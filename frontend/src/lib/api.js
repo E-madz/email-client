@@ -34,7 +34,7 @@ export function setToken(token) {
   }
 }
 
-async function request(path, { method = 'GET', body, signal } = {}) {
+async function request(path, { method = 'GET', body, signal, isFormData = false } = {}) {
   const headers = {
     Accept: 'application/json',
   }
@@ -46,8 +46,14 @@ async function request(path, { method = 'GET', body, signal } = {}) {
 
   let requestBody
   if (body !== undefined) {
-    headers['Content-Type'] = 'application/json'
-    requestBody = JSON.stringify(body)
+    if (isFormData) {
+      // No Content-Type here on purpose — the browser sets
+      // multipart/form-data with the correct boundary itself.
+      requestBody = body
+    } else {
+      headers['Content-Type'] = 'application/json'
+      requestBody = JSON.stringify(body)
+    }
   }
 
   let response
@@ -87,4 +93,5 @@ export const api = {
   put: (path, body, options) => request(path, { ...options, method: 'PUT', body }),
   patch: (path, body, options) => request(path, { ...options, method: 'PATCH', body }),
   delete: (path, options) => request(path, { ...options, method: 'DELETE' }),
+  postForm: (path, formData, options) => request(path, { ...options, method: 'POST', body: formData, isFormData: true }),
 }

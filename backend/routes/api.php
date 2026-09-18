@@ -2,7 +2,9 @@
 
 declare(strict_types=1);
 
+use App\Http\Controllers\Api\AttachmentController;
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\ComposeController;
 use App\Http\Controllers\Api\EmailAccountController;
 use App\Http\Controllers\Api\FolderController;
 use App\Http\Controllers\Api\MessageController;
@@ -29,8 +31,10 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/folders/{folder}/sync', [FolderController::class, 'sync']);
         Route::get('/messages/{message}', [MessageController::class, 'show']);
         Route::patch('/messages/{message}/flags', [MessageController::class, 'updateFlags']);
+        Route::post('/email-accounts/{emailAccount}/messages', [ComposeController::class, 'send']);
     });
 
-    // Local-DB-only, no live IMAP call — not subject to the IMAP-facing throttle above.
+    // Local-DB-only, no live IMAP/SMTP call — not subject to the mail-server-facing throttle above.
     Route::get('/folders/{folder}/messages', [MessageController::class, 'index']);
+    Route::get('/attachments/{attachment}', [AttachmentController::class, 'download']);
 });

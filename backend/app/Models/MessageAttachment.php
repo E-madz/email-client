@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-#[Fillable(['message_id', 'filename', 'mime_type', 'size_bytes', 'part_number'])]
+#[Fillable(['message_id', 'filename', 'mime_type', 'size_bytes', 'part_number', 'storage_path'])]
 class MessageAttachment extends Model
 {
     use HasFactory;
