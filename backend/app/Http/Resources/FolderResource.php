@@ -22,6 +22,7 @@ class FolderResource extends JsonResource
             'id' => $this->id,
             'name' => $this->name,
             'type' => $this->type,
+            'is_user_created' => $this->is_user_created,
             'display_name' => $this->display_name,
             'unread_count' => $this->unread_count ?? 0,
             'last_synced_at' => $this->last_synced_at?->toIso8601String(),

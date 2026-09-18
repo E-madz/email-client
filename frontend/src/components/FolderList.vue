@@ -130,6 +130,19 @@ function buildFolderTree(items) {
 
 const folderTree = computed(() => buildFolderTree(folders.items))
 
+/**
+ * Split the tree into system folders (Inbox/Sent/Drafts/Trash/Spam/Archive,
+ * plus any real provider folder the server reports that we just couldn't
+ * map — see `is_user_created` in the backend, CLAUDE.md §8 item 55) and
+ * folders the user created themselves through this app, so the sidebar can
+ * show a visual divider between the two groups. Grouping is by each
+ * top-level folder's own flag — a user-created folder is never expected to
+ * nest under another folder anyway, since new folders are always created
+ * top-level (§8 item 52).
+ */
+const systemFolderRoots = computed(() => folderTree.value.filter((folder) => !folder.is_user_created))
+const userFolderRoots = computed(() => folderTree.value.filter((folder) => folder.is_user_created))
+
 function loadFolders() {
   if (props.accountId) {
     folders.fetch(props.accountId)
@@ -232,19 +245,43 @@ onMounted(loadFolders)
     <p v-else-if="!accountId" class="px-1 text-sm text-gray-400">ابتدا یک اکانت انتخاب کنید.</p>
     <p v-else-if="!folders.items.length" class="px-1 text-sm text-gray-400">پوشه‌ای یافت نشد.</p>
 
-    <ul v-else class="space-y-0.5">
-      <FolderTreeItem
-        v-for="folder in folderTree"
-        :key="folder.id"
-        :folder="folder"
-        :active-id="folders.activeId"
-        :icons="FOLDER_ICONS"
-        :deleting-id="deletingFolderId"
-        @select="selectFolder"
-        @drop-message="handleDropMessage"
-        @delete="handleDeleteFolder"
-      />
-    </ul>
+    <template v-else>
+      <ul class="space-y-0.5">
+        <FolderTreeItem
+          v-for="folder in systemFolderRoots"
+          :key="folder.id"
+          :folder="folder"
+          :active-id="folders.activeId"
+          :icons="FOLDER_ICONS"
+          :deleting-id="deletingFolderId"
+          @select="selectFolder"
+          @drop-message="handleDropMessage"
+          @delete="handleDeleteFolder"
+        />
+      </ul>
+
+      <template v-if="userFolderRoots.length">
+        <div class="my-2 flex items-center gap-2 px-1">
+          <span class="h-px flex-1 bg-gray-200"></span>
+          <span class="text-[10px] font-semibold uppercase tracking-wide text-gray-400">پوشه‌های شما</span>
+          <span class="h-px flex-1 bg-gray-200"></span>
+        </div>
+
+        <ul class="space-y-0.5">
+          <FolderTreeItem
+            v-for="folder in userFolderRoots"
+            :key="folder.id"
+            :folder="folder"
+            :active-id="folders.activeId"
+            :icons="FOLDER_ICONS"
+            :deleting-id="deletingFolderId"
+            @select="selectFolder"
+            @drop-message="handleDropMessage"
+            @delete="handleDeleteFolder"
+          />
+        </ul>
+      </template>
+    </template>
 
     <p v-if="deleteError" class="mt-1.5 px-1 text-xs text-red-600">
       {{ deleteError?.message ?? 'حذف پوشه با خطا مواجه شد.' }}

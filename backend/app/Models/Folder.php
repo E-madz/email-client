@@ -10,7 +10,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-#[Fillable(['email_account_id', 'name', 'type', 'display_name', 'uid_validity', 'last_uid', 'last_synced_at'])]
+#[Fillable(['email_account_id', 'name', 'type', 'is_user_created', 'display_name', 'uid_validity', 'last_uid', 'last_synced_at'])]
 class Folder extends Model
 {
     use HasFactory;
@@ -21,6 +21,7 @@ class Folder extends Model
     protected function casts(): array
     {
         return [
+            'is_user_created' => 'boolean',
             'uid_validity' => 'integer',
             'last_uid' => 'integer',
             'last_synced_at' => 'datetime',

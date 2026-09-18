@@ -53,6 +53,7 @@ final class FolderCreationService
         return $emailAccount->folders()->create([
             'name' => $name,
             'type' => 'custom',
+            'is_user_created' => true,
             'display_name' => $name,
             'uid_validity' => null,
             'last_uid' => 0,

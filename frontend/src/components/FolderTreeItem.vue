@@ -61,7 +61,7 @@ function handleDrop(event) {
       </button>
 
       <button
-        v-if="folder.type === 'custom'"
+        v-if="folder.is_user_created"
         type="button"
         :disabled="deletingId === folder.id"
         class="mr-1 shrink-0 rounded p-1 text-gray-300 opacity-0 group-hover:opacity-100 hover:bg-gray-200 hover:text-red-500 focus:opacity-100 disabled:cursor-wait disabled:opacity-100"

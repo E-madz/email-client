@@ -107,17 +107,20 @@ class FolderController extends Controller
 
     /**
      * Delete a folder the user created — a real IMAP `DELETE`, only mirrored
-     * locally once the server confirms it. Restricted to `custom`-type
-     * folders: a system folder (Inbox/Sent/Drafts/Trash/Spam/Archive) can
-     * never be deleted through this endpoint, regardless of what the client
-     * sends. Deleting a non-empty folder deletes its messages too — IMAP has
-     * no "move contents to Trash first" step for a mailbox deletion, so the
-     * frontend is expected to warn about this before calling it.
+     * locally once the server confirms it. Restricted to folders this app
+     * itself created (`is_user_created`), *not* merely `type === 'custom'`:
+     * a real provider folder that FolderTypeMapper couldn't recognize (or
+     * demoted to `custom` per the dedup rule, §8 item 38 — e.g. a standalone
+     * `Junk`) is still a genuine system folder, not something the user made
+     * through this app, and must never be deletable here. Deleting a
+     * non-empty folder deletes its messages too — IMAP has no "move contents
+     * to Trash first" step for a mailbox deletion, so the frontend is
+     * expected to warn about this before calling it.
      */
     public function destroy(Request $request, Folder $folder): JsonResponse
     {
         abort_unless($folder->emailAccount->user_id === $request->user()->id, 403);
-        abort_unless($folder->type === 'custom', 422, 'Only folders you created yourself can be deleted.');
+        abort_unless($folder->is_user_created, 422, 'Only folders you created yourself can be deleted.');
 
         try {
             $this->folderDeletionService->delete($folder);

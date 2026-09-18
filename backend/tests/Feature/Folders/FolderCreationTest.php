@@ -56,12 +56,14 @@ class FolderCreationTest extends TestCase
         $response->assertCreated();
         $response->assertJsonPath('name', 'Projects');
         $response->assertJsonPath('type', 'custom');
+        $response->assertJsonPath('is_user_created', true);
         $response->assertJsonPath('display_name', 'Projects');
 
         $this->assertDatabaseHas('folders', [
             'email_account_id' => $account->id,
             'name' => 'Projects',
             'type' => 'custom',
+            'is_user_created' => true,
         ]);
     }
 
