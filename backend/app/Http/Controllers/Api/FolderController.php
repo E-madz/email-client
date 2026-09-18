@@ -8,10 +8,12 @@ use App\Exceptions\Mail\ImapAuthenticationException;
 use App\Exceptions\Mail\ImapConnectionException;
 use App\Http\Controllers\Concerns\HandlesImapMailExceptions;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Folders\StoreFolderRequest;
 use App\Http\Resources\FolderResource;
 use App\Http\Resources\MessageResource;
 use App\Models\EmailAccount;
 use App\Models\Folder;
+use App\Services\Mail\FolderCreationService;
 use App\Services\Mail\FolderSyncService;
 use App\Services\Mail\MessageDeletionService;
 use App\Services\Mail\MessageSyncService;
@@ -26,6 +28,7 @@ class FolderController extends Controller
         private readonly FolderSyncService $folderSyncService,
         private readonly MessageSyncService $messageSyncService,
         private readonly MessageDeletionService $messageDeletionService,
+        private readonly FolderCreationService $folderCreationService,
     ) {
         //
     }
@@ -61,6 +64,23 @@ class FolderController extends Controller
         }
 
         return MessageResource::collection($newMessages)->response();
+    }
+
+    /**
+     * Create a new folder — a real IMAP `CREATE`, mirrored locally only once
+     * the server confirms it exists.
+     */
+    public function store(StoreFolderRequest $request, EmailAccount $emailAccount): JsonResponse
+    {
+        abort_unless($emailAccount->user_id === $request->user()->id, 403);
+
+        try {
+            $folder = $this->folderCreationService->create($emailAccount, $request->validated('name'));
+        } catch (ImapAuthenticationException|ImapConnectionException $e) {
+            return $this->respondToImapFailure($emailAccount, $e);
+        }
+
+        return (new FolderResource($folder))->response()->setStatusCode(201);
     }
 
     /**

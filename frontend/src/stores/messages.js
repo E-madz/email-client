@@ -21,6 +21,8 @@ export const useMessagesStore = defineStore('messages', {
     deleteError: null,
     emptyingTrash: false,
     emptyTrashError: null,
+    movingId: null,
+    moveError: null,
   }),
 
   actions: {
@@ -205,6 +207,52 @@ export const useMessagesStore = defineStore('messages', {
         throw error
       } finally {
         this.deletingId = null
+      }
+    },
+
+    /**
+     * Move a message to another folder (drag-and-drop or a "Move to" menu).
+     * Optimistic, same reasoning as setFlags/deleteMessage — removed from
+     * the current (single-folder) list right away; a virtual view like
+     * Starred keeps showing it (still flagged, just in a different folder)
+     * so nothing needs to change there.
+     */
+    async moveMessage(messageId, targetFolderId) {
+      this.movingId = messageId
+      this.moveError = null
+
+      const folders = useFoldersStore()
+      const target = this.items.find((item) => item.id === messageId)
+      const wasUnread = target ? !target.is_read : false
+      const sourceFolderId = target?.folder_id ?? this.folderId
+      const previousItems = this.items
+      const previousSelected = this.selected
+      const removeFromList = this.folderId !== STARRED_ID
+
+      const adjustCounts = (sign) => {
+        if (!wasUnread) return
+        if (sourceFolderId) folders.adjustUnreadCount(sourceFolderId, sign * -1)
+        folders.adjustUnreadCount(targetFolderId, sign * 1)
+      }
+
+      if (removeFromList) {
+        this.items = this.items.filter((item) => item.id !== messageId)
+        if (this.selected?.id === messageId) {
+          this.closeMessage()
+        }
+      }
+      adjustCounts(1)
+
+      try {
+        await api.patch(`/messages/${messageId}/move`, { folder_id: targetFolderId })
+      } catch (error) {
+        this.items = previousItems
+        this.selected = previousSelected
+        adjustCounts(-1)
+        this.moveError = error
+        throw error
+      } finally {
+        this.movingId = null
       }
     },
 

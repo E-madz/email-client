@@ -77,6 +77,26 @@ function deleteMessage(event, message) {
   messages.deleteMessage(message.id)
 }
 
+/**
+ * Folders a message could be moved to — every real folder except the one
+ * it's currently in. Starred is never a candidate since it's a virtual view,
+ * not a real folder (it's not part of `folders.items` at all).
+ */
+function moveTargets(message) {
+  return folders.items.filter((folder) => folder.id !== (message.folder_id ?? props.folderId))
+}
+
+function handleMoveSelect(event, message) {
+  const folderId = Number(event.target.value)
+  event.target.value = ''
+  if (folderId) messages.moveMessage(message.id, folderId)
+}
+
+function handleDragStart(event, message) {
+  event.dataTransfer.setData('text/plain', String(message.id))
+  event.dataTransfer.effectAllowed = 'move'
+}
+
 function emptyTrash() {
   if (!props.folderId) return
   if (!confirm('همه‌ی پیام‌های سطل زباله برای همیشه حذف شوند؟ این کار قابل بازگشت نیست.')) return
@@ -164,6 +184,12 @@ onMounted(() => loadList(1))
       :message="messages.deleteError?.message ?? 'حذف پیام با خطا مواجه شد.'"
       :show-retry="false"
     />
+    <ErrorBanner
+      v-if="messages.moveError"
+      class="mx-4 mt-3"
+      :message="messages.moveError?.message ?? 'انتقال پیام با خطا مواجه شد.'"
+      :show-retry="false"
+    />
 
     <div class="thin-scrollbar flex-1 overflow-y-auto">
       <LoadingSpinner v-if="messages.listLoading && !messages.items.length" label="در حال بارگذاری پیام‌ها…" />
@@ -193,9 +219,11 @@ onMounted(() => loadList(1))
         <li v-for="message in messages.items" :key="message.id">
           <button
             type="button"
+            draggable="true"
             class="flex w-full flex-col gap-1 px-4 py-3 text-right transition hover:bg-gray-50"
             :class="{ 'bg-indigo-50/60': messages.selected?.id === message.id }"
             @click="emit('select', message.id)"
+            @dragstart="handleDragStart($event, message)"
           >
             <div class="flex items-center gap-2">
               <span
@@ -273,6 +301,28 @@ onMounted(() => loadList(1))
                     />
                   </svg>
                 </button>
+                <div class="relative" @click.stop>
+                  <select
+                    class="absolute inset-0 h-4 w-4 cursor-pointer appearance-none opacity-0"
+                    :disabled="messages.movingId === message.id"
+                    aria-label="انتقال به پوشه"
+                    @change="handleMoveSelect($event, message)"
+                  >
+                    <option value="">انتقال به…</option>
+                    <option v-for="folder in moveTargets(message)" :key="folder.id" :value="folder.id">
+                      {{ folder.display_name }}
+                    </option>
+                  </select>
+                  <span class="pointer-events-none flex rounded p-0.5 text-gray-300 hover:bg-gray-200 hover:text-indigo-500">
+                    <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        d="M8.25 9.75h7.5M8.25 9.75a2.25 2.25 0 0 1-2.25-2.25V6a2.25 2.25 0 0 1 2.25-2.25h4.5L17.25 6v1.5a2.25 2.25 0 0 1-2.25 2.25M8.25 9.75v10.5a2.25 2.25 0 0 0 2.25 2.25h3a2.25 2.25 0 0 0 2.25-2.25V9.75"
+                      />
+                    </svg>
+                  </span>
+                </div>
               </div>
             </div>
           </button>

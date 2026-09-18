@@ -28,9 +28,11 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::put('/email-accounts/{emailAccount}', [EmailAccountController::class, 'update']);
 
         Route::get('/email-accounts/{emailAccount}/folders', [FolderController::class, 'index']);
+        Route::post('/email-accounts/{emailAccount}/folders', [FolderController::class, 'store']);
         Route::post('/folders/{folder}/sync', [FolderController::class, 'sync']);
         Route::get('/messages/{message}', [MessageController::class, 'show']);
         Route::patch('/messages/{message}/flags', [MessageController::class, 'updateFlags']);
+        Route::patch('/messages/{message}/move', [MessageController::class, 'move']);
         Route::delete('/messages/{message}', [MessageController::class, 'destroy']);
         Route::post('/email-accounts/{emailAccount}/messages', [ComposeController::class, 'send']);
         Route::delete('/folders/{folder}/messages', [FolderController::class, 'emptyTrash']);

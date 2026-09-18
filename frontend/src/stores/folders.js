@@ -24,6 +24,8 @@ export const useFoldersStore = defineStore('folders', {
     activeId: null,
     loadingAccountId: null,
     error: null,
+    creating: false,
+    createError: null,
   }),
 
   getters: {
@@ -54,6 +56,25 @@ export const useFoldersStore = defineStore('folders', {
         this.error = error
       } finally {
         this.loadingAccountId = null
+      }
+    },
+
+    /**
+     * A real IMAP `CREATE`, not just a local row — see FolderCreationService.
+     */
+    async createFolder(accountId, name) {
+      this.creating = true
+      this.createError = null
+
+      try {
+        const folder = await api.post(`/email-accounts/${accountId}/folders`, { name })
+        this.items = [...this.items, folder]
+        return folder
+      } catch (error) {
+        this.createError = error
+        throw error
+      } finally {
+        this.creating = false
       }
     },
 

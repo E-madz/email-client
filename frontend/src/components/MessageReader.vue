@@ -24,6 +24,14 @@ function deleteMessage() {
   messages.deleteMessage(message.id)
 }
 
+const moveTargets = computed(() => folders.items.filter((folder) => folder.id !== messages.selected?.folder_id))
+
+function handleMoveSelect(event) {
+  const folderId = Number(event.target.value)
+  event.target.value = ''
+  if (folderId && messages.selected) messages.moveMessage(messages.selected.id, folderId)
+}
+
 const downloadingId = ref(null)
 const downloadError = ref(null)
 
@@ -160,6 +168,29 @@ function toggleFlag() {
               />
             </svg>
           </button>
+
+          <div class="relative">
+            <select
+              class="absolute inset-0 h-9 w-9 cursor-pointer appearance-none opacity-0"
+              :disabled="messages.movingId === messages.selected.id"
+              aria-label="انتقال به پوشه"
+              @change="handleMoveSelect"
+            >
+              <option value="">انتقال به…</option>
+              <option v-for="folder in moveTargets" :key="folder.id" :value="folder.id">
+                {{ folder.display_name }}
+              </option>
+            </select>
+            <span class="pointer-events-none flex rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-indigo-500">
+              <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M8.25 9.75h7.5M8.25 9.75a2.25 2.25 0 0 1-2.25-2.25V6a2.25 2.25 0 0 1 2.25-2.25h4.5L17.25 6v1.5a2.25 2.25 0 0 1-2.25 2.25M8.25 9.75v10.5a2.25 2.25 0 0 0 2.25 2.25h3a2.25 2.25 0 0 0 2.25-2.25V9.75"
+                />
+              </svg>
+            </span>
+          </div>
 
           <button
             type="button"

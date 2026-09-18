@@ -19,8 +19,10 @@ use App\Models\Message;
  */
 final class MessageDeletionService
 {
-    public function __construct(private readonly ImapConnectionFactory $connectionFactory)
-    {
+    public function __construct(
+        private readonly ImapConnectionFactory $connectionFactory,
+        private readonly MessageMoveService $messageMoveService,
+    ) {
         //
     }
 
@@ -32,47 +34,13 @@ final class MessageDeletionService
      */
     public function moveToTrash(Message $message): Message
     {
-        $folder = $message->folder;
-        $emailAccount = $folder->emailAccount;
-
-        $trashFolder = $emailAccount->folders()->where('type', 'trash')->first();
+        $trashFolder = $message->folder->emailAccount->folders()->where('type', 'trash')->first();
 
         if ($trashFolder === null) {
             throw new ImapConnectionException('No Trash folder found for this account yet — refresh the folder list first.');
         }
 
-        $client = $this->connectionFactory->connectForAccount($emailAccount);
-
-        try {
-            $imapFolder = $this->connectionFactory->guard(fn () => $client->getFolderByPath($folder->name));
-
-            if ($imapFolder === null) {
-                throw new ImapConnectionException("Folder \"{$folder->name}\" no longer exists on the mail server.");
-            }
-
-            $imapMessage = $this->connectionFactory->guard(
-                fn () => $imapFolder->query()->whereUid($message->uid)->leaveUnread()->get()->first(),
-            );
-
-            if ($imapMessage === null) {
-                throw new ImapConnectionException('The message no longer exists on the mail server.');
-            }
-
-            $moved = $this->connectionFactory->guard(fn () => $imapMessage->move($trashFolder->name, expunge: true));
-
-            if ($moved === null) {
-                throw new ImapConnectionException('Could not move the message to Trash.');
-            }
-
-            $message->update([
-                'folder_id' => $trashFolder->id,
-                'uid' => (int) $moved->uid,
-            ]);
-        } finally {
-            $this->connectionFactory->disconnect($client);
-        }
-
-        return $message->refresh();
+        return $this->messageMoveService->moveTo($message, $trashFolder);
     }
 
     /**

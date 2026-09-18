@@ -8,6 +8,7 @@ use App\Exceptions\Mail\ImapAuthenticationException;
 use App\Exceptions\Mail\ImapConnectionException;
 use App\Http\Controllers\Concerns\HandlesImapMailExceptions;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Messages\MoveMessageRequest;
 use App\Http\Requests\Messages\UpdateMessageFlagsRequest;
 use App\Http\Resources\MessageDetailResource;
 use App\Http\Resources\MessageResource;
@@ -17,6 +18,7 @@ use App\Models\Message;
 use App\Services\Mail\MessageContentService;
 use App\Services\Mail\MessageDeletionService;
 use App\Services\Mail\MessageFlagService;
+use App\Services\Mail\MessageMoveService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -29,6 +31,7 @@ class MessageController extends Controller
         private readonly MessageContentService $messageContentService,
         private readonly MessageFlagService $messageFlagService,
         private readonly MessageDeletionService $messageDeletionService,
+        private readonly MessageMoveService $messageMoveService,
     ) {
         //
     }
@@ -95,6 +98,27 @@ class MessageController extends Controller
                 $request->has('is_read') ? $request->boolean('is_read') : null,
                 $request->has('is_flagged') ? $request->boolean('is_flagged') : null,
             );
+        } catch (ImapAuthenticationException|ImapConnectionException $e) {
+            return $this->respondToImapFailure($emailAccount, $e);
+        }
+
+        return (new MessageResource($message))->response();
+    }
+
+    /**
+     * Move a message to another folder in the same account — the general
+     * case behind a user dragging a message onto a folder (or picking one
+     * from a "Move to" menu).
+     */
+    public function move(MoveMessageRequest $request, Message $message): JsonResponse
+    {
+        $emailAccount = $message->folder->emailAccount;
+        abort_unless($emailAccount->user_id === $request->user()->id, 403);
+
+        $targetFolder = Folder::findOrFail($request->validated('folder_id'));
+
+        try {
+            $message = $this->messageMoveService->moveTo($message, $targetFolder);
         } catch (ImapAuthenticationException|ImapConnectionException $e) {
             return $this->respondToImapFailure($emailAccount, $e);
         }

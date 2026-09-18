@@ -1,6 +1,7 @@
 <script setup>
-import { watch, onMounted, computed } from 'vue'
+import { ref, watch, onMounted, computed, nextTick } from 'vue'
 import { useFoldersStore, STARRED_ID } from '../stores/folders'
+import { useMessagesStore } from '../stores/messages'
 import LoadingSpinner from './LoadingSpinner.vue'
 import ErrorBanner from './ErrorBanner.vue'
 import FolderTreeItem from './FolderTreeItem.vue'
@@ -12,6 +13,39 @@ const props = defineProps({
 const emit = defineEmits(['select'])
 
 const folders = useFoldersStore()
+const messages = useMessagesStore()
+
+const isCreating = ref(false)
+const newFolderName = ref('')
+const newFolderInput = ref(null)
+
+async function startCreating() {
+  isCreating.value = true
+  newFolderName.value = ''
+  await nextTick()
+  newFolderInput.value?.focus()
+}
+
+function cancelCreating() {
+  isCreating.value = false
+}
+
+async function submitNewFolder() {
+  const name = newFolderName.value.trim()
+  if (!name || !props.accountId) return
+
+  try {
+    await folders.createFolder(props.accountId, name)
+    isCreating.value = false
+  } catch {
+    // folders.createError already holds the message; the input stays open
+    // so the user can see the error banner and retry without retyping.
+  }
+}
+
+function handleDropMessage({ folderId, messageId }) {
+  messages.moveMessage(messageId, folderId)
+}
 
 const FOLDER_ICONS = {
   inbox:
@@ -94,30 +128,59 @@ onMounted(loadFolders)
   <div>
     <div class="flex items-center justify-between px-1 pb-2 pt-4">
       <h2 class="text-xs font-semibold uppercase tracking-wide text-gray-400">پوشه‌ها</h2>
-      <button
-        type="button"
-        class="rounded-full p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600 disabled:opacity-40"
-        aria-label="به‌روزرسانی پوشه‌ها"
-        :disabled="!accountId || folders.loadingAccountId === accountId"
-        @click="loadFolders"
-      >
-        <svg
-          class="h-3.5 w-3.5"
-          :class="{ 'animate-spin': accountId && folders.loadingAccountId === accountId }"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          aria-hidden="true"
+      <div class="flex items-center gap-1">
+        <button
+          type="button"
+          class="rounded-full p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600 disabled:opacity-40"
+          aria-label="ساخت پوشه‌ی جدید"
+          :disabled="!accountId"
+          @click="startCreating"
         >
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99"
-          />
-        </svg>
-      </button>
+          <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+          </svg>
+        </button>
+        <button
+          type="button"
+          class="rounded-full p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600 disabled:opacity-40"
+          aria-label="به‌روزرسانی پوشه‌ها"
+          :disabled="!accountId || folders.loadingAccountId === accountId"
+          @click="loadFolders"
+        >
+          <svg
+            class="h-3.5 w-3.5"
+            :class="{ 'animate-spin': accountId && folders.loadingAccountId === accountId }"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            aria-hidden="true"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99"
+            />
+          </svg>
+        </button>
+      </div>
     </div>
+
+    <form v-if="isCreating" class="mb-2 px-1" @submit.prevent="submitNewFolder">
+      <input
+        ref="newFolderInput"
+        v-model="newFolderName"
+        type="text"
+        placeholder="نام پوشه"
+        :disabled="folders.creating"
+        class="w-full rounded-lg border border-gray-200 px-2 py-1 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+        @keydown.escape="cancelCreating"
+        @blur="!newFolderName && cancelCreating()"
+      />
+      <p v-if="folders.createError" class="mt-1 text-xs text-red-600">
+        {{ folders.createError?.message ?? 'ساخت پوشه با خطا مواجه شد.' }}
+      </p>
+    </form>
 
     <!--
       Starred is a virtual, cross-folder view (CLAUDE.md §8) — not a real
@@ -154,6 +217,7 @@ onMounted(loadFolders)
         :active-id="folders.activeId"
         :icons="FOLDER_ICONS"
         @select="selectFolder"
+        @drop-message="handleDropMessage"
       />
     </ul>
   </div>
