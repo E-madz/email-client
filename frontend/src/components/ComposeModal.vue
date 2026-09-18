@@ -22,6 +22,21 @@ async function handleSubmit() {
     // compose.error already holds the message; nothing else to do here.
   }
 }
+
+async function handleSaveDraft() {
+  try {
+    await compose.saveDraft()
+  } catch {
+    // compose.error already holds the message; nothing else to do here.
+  }
+}
+
+const titles = {
+  new: 'نوشتن ایمیل جدید',
+  reply: 'پاسخ به پیام',
+  forward: 'ارجاع پیام',
+  draft: 'ویرایش پیش‌نویس',
+}
 </script>
 
 <template>
@@ -32,7 +47,7 @@ async function handleSubmit() {
   >
     <div class="flex max-h-[90vh] w-full max-w-xl flex-col rounded-2xl bg-white shadow-xl">
       <div class="flex items-center justify-between border-b border-gray-100 px-5 py-4">
-        <h2 class="text-base font-bold text-gray-900">نوشتن ایمیل جدید</h2>
+        <h2 class="text-base font-bold text-gray-900">{{ titles[compose.mode] ?? titles.new }}</h2>
         <button
           type="button"
           class="rounded-full p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
@@ -60,7 +75,7 @@ async function handleSubmit() {
             v-model="compose.draft.to"
             type="text"
             dir="ltr"
-            required
+            :required="compose.mode !== 'draft'"
             placeholder="a@example.com, b@example.com"
             class="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
           />
@@ -92,7 +107,7 @@ async function handleSubmit() {
           <input
             v-model="compose.draft.subject"
             type="text"
-            required
+            :required="compose.mode !== 'draft'"
             class="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
           />
         </label>
@@ -101,7 +116,7 @@ async function handleSubmit() {
           <span class="mb-1 block text-xs font-medium text-gray-500">متن پیام</span>
           <textarea
             v-model="compose.draft.bodyText"
-            required
+            :required="compose.mode !== 'draft'"
             rows="8"
             class="w-full resize-none rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
           />
@@ -121,6 +136,11 @@ async function handleSubmit() {
             افزودن پیوست
             <input type="file" multiple class="hidden" @change="handleFileChange" />
           </label>
+
+          <p v-if="compose.mode === 'draft'" class="mt-1.5 text-xs text-gray-400">
+            پیوست‌های قبلی این پیش‌نویس در اینجا نشان داده نمی‌شوند؛ اگر بدون افزودن پیوست جدید ذخیره کنید، پیوست‌های قبلی حذف
+            می‌شوند.
+          </p>
 
           <ul v-if="compose.draft.attachments.length" class="mt-2 space-y-1">
             <li
@@ -157,8 +177,16 @@ async function handleSubmit() {
             انصراف
           </button>
           <button
+            type="button"
+            :disabled="compose.savingDraft || compose.sending"
+            class="rounded-lg border border-gray-200 px-3 py-1.5 text-sm font-medium text-gray-600 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+            @click="handleSaveDraft"
+          >
+            {{ compose.savingDraft ? 'در حال ذخیره…' : 'ذخیره پیش‌نویس' }}
+          </button>
+          <button
             type="submit"
-            :disabled="compose.sending"
+            :disabled="compose.sending || compose.savingDraft"
             class="rounded-lg bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {{ compose.sending ? 'در حال ارسال…' : 'ارسال' }}

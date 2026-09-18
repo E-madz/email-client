@@ -2,6 +2,8 @@
 import { ref, computed } from 'vue'
 import { useMessagesStore } from '../stores/messages'
 import { useFoldersStore } from '../stores/folders'
+import { useAccountsStore } from '../stores/accounts'
+import { useComposeStore } from '../stores/compose'
 import { api, ApiError } from '../lib/api'
 import LoadingSpinner from './LoadingSpinner.vue'
 import ErrorBanner from './ErrorBanner.vue'
@@ -10,8 +12,18 @@ import SafeHtmlFrame from './SafeHtmlFrame.vue'
 
 const messages = useMessagesStore()
 const folders = useFoldersStore()
+const accounts = useAccountsStore()
+const compose = useComposeStore()
 
 const isTrash = computed(() => folders.active?.type === 'trash')
+
+function reply() {
+  if (messages.selected) compose.openReply(accounts.activeId, messages.selected)
+}
+
+function forward() {
+  if (messages.selected) compose.openForward(accounts.activeId, messages.selected)
+}
 
 function deleteMessage() {
   const message = messages.selected
@@ -121,6 +133,20 @@ function toggleFlag() {
         </div>
 
         <div class="flex shrink-0 items-center gap-1">
+          <button
+            type="button"
+            class="rounded-lg px-2.5 py-1.5 text-xs font-medium text-gray-500 hover:bg-gray-100"
+            @click="reply"
+          >
+            پاسخ
+          </button>
+          <button
+            type="button"
+            class="rounded-lg px-2.5 py-1.5 text-xs font-medium text-gray-500 hover:bg-gray-100"
+            @click="forward"
+          >
+            ارجاع
+          </button>
           <button
             type="button"
             class="rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600"

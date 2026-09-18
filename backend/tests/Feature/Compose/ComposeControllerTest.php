@@ -6,6 +6,7 @@ namespace Tests\Feature\Compose;
 
 use App\Models\EmailAccount;
 use App\Models\Folder;
+use App\Models\Message;
 use App\Models\MessageAttachment;
 use App\Models\User;
 use App\Services\Mail\SmtpTransportManager;
@@ -16,10 +17,15 @@ use Illuminate\Support\Facades\Storage;
 use Mockery\MockInterface;
 use Symfony\Component\Mailer\Exception\TransportException;
 use Symfony\Component\Mailer\Transport\TransportInterface;
+use Tests\Concerns\InteractsWithImapMocks;
 use Tests\TestCase;
+use Webklex\PHPIMAP\Client;
+use Webklex\PHPIMAP\ClientManager;
+use Webklex\PHPIMAP\Exceptions\ConnectionFailedException;
 
 class ComposeControllerTest extends TestCase
 {
+    use InteractsWithImapMocks;
     use RefreshDatabase;
 
     protected function setUp(): void
@@ -48,6 +54,7 @@ class ComposeControllerTest extends TestCase
     public function test_sending_a_message_returns_201_and_records_a_local_sent_copy(): void
     {
         $this->mockSuccessfulSend();
+        $this->mockSuccessfulImapAppend(uid: 777);
 
         $user = User::factory()->create();
         $account = EmailAccount::factory()->for($user)->create(['email' => 'me@example.com']);
@@ -69,13 +76,60 @@ class ComposeControllerTest extends TestCase
             'subject' => 'Hello there',
             'from_email' => 'me@example.com',
             'is_read' => true,
+            // A real IMAP APPEND (Phase 4b) — the UID comes from the mocked
+            // by-Message-ID lookup, not a synthetic timestamp.
+            'uid' => 777,
         ]);
+    }
+
+    public function test_sending_a_reply_sets_threading_headers_and_stores_in_reply_to(): void
+    {
+        $this->mockSuccessfulSend();
+        $this->mockSuccessfulImapAppend();
+
+        $user = User::factory()->create();
+        $account = EmailAccount::factory()->for($user)->create(['email' => 'me@example.com']);
+        Folder::factory()->for($account)->create(['name' => 'Sent', 'type' => 'sent']);
+        $inbox = Folder::factory()->for($account)->create(['name' => 'INBOX', 'type' => 'inbox']);
+        $original = Message::factory()->for($inbox)->create(['rfc_message_id' => '<original@example.com>']);
+
+        $response = $this->actingAs($user, 'sanctum')->postJson("/api/email-accounts/{$account->id}/messages", [
+            'to' => ['friend@example.com'],
+            'subject' => 'Re: Hello',
+            'body_html' => '<p>Reply body</p>',
+            'in_reply_to_message_id' => $original->id,
+        ]);
+
+        $response->assertCreated();
+        $this->assertDatabaseHas('messages', [
+            'subject' => 'Re: Hello',
+            'in_reply_to' => '<original@example.com>',
+        ]);
+    }
+
+    public function test_replying_to_a_message_from_another_account_is_rejected(): void
+    {
+        $user = User::factory()->create();
+        $account = EmailAccount::factory()->for($user)->create();
+        $otherAccount = EmailAccount::factory()->for($user)->create();
+        $otherInbox = Folder::factory()->for($otherAccount)->create(['name' => 'INBOX']);
+        $original = Message::factory()->for($otherInbox)->create();
+
+        $response = $this->actingAs($user, 'sanctum')->postJson("/api/email-accounts/{$account->id}/messages", [
+            'to' => ['friend@example.com'],
+            'subject' => 'Re: Hello',
+            'body_html' => '<p>Reply body</p>',
+            'in_reply_to_message_id' => $original->id,
+        ]);
+
+        $response->assertStatus(422);
     }
 
     public function test_sending_a_message_with_an_attachment_stores_content_and_metadata(): void
     {
         Storage::fake('local');
         $this->mockSuccessfulSend();
+        $this->mockSuccessfulImapAppend();
 
         $user = User::factory()->create();
         $account = EmailAccount::factory()->for($user)->create();
@@ -173,6 +227,34 @@ class ComposeControllerTest extends TestCase
         ]);
 
         $response->assertForbidden();
+    }
+
+    public function test_sending_falls_back_to_a_local_only_sent_copy_when_the_imap_append_fails(): void
+    {
+        $this->mockSuccessfulSend();
+
+        $client = \Mockery::mock(Client::class);
+        $client->shouldReceive('connect')->andThrow(new ConnectionFailedException);
+        $client->shouldReceive('disconnect')->andReturnSelf();
+        $this->mock(ClientManager::class, function (MockInterface $mock) use ($client) {
+            $mock->shouldReceive('make')->andReturn($client);
+        });
+
+        $user = User::factory()->create();
+        $account = EmailAccount::factory()->for($user)->create();
+        Folder::factory()->for($account)->create(['name' => 'Sent', 'type' => 'sent']);
+
+        $response = $this->actingAs($user, 'sanctum')->postJson("/api/email-accounts/{$account->id}/messages", [
+            'to' => ['friend@example.com'],
+            'subject' => 'Append will fail',
+            'body_html' => '<p>Hi</p>',
+        ]);
+
+        // The send itself already succeeded over SMTP — an IMAP append
+        // failure never surfaces as an error to the user, it just falls
+        // back to recording a local-only copy (§8 item 58).
+        $response->assertCreated();
+        $this->assertDatabaseHas('messages', ['subject' => 'Append will fail']);
     }
 
     public function test_sending_without_a_synced_sent_folder_still_succeeds(): void

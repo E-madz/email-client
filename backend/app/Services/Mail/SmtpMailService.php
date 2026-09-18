@@ -4,29 +4,31 @@ declare(strict_types=1);
 
 namespace App\Services\Mail;
 
+use App\Exceptions\Mail\ImapAuthenticationException;
+use App\Exceptions\Mail\ImapConnectionException;
 use App\Exceptions\Mail\SmtpAuthenticationException;
 use App\Exceptions\Mail\SmtpConnectionException;
 use App\Models\EmailAccount;
+use App\Models\Folder;
 use App\Models\Message;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Str;
 use Symfony\Component\Mime\Email;
+use Throwable;
 
 /**
  * Composes and sends a message through the account's SMTP server, then
- * records a local copy in its Sent folder. Phase 4a scope (CLAUDE.md §8):
- * the local copy is *not* also APPENDed to the real IMAP Sent folder yet —
- * that (plus Drafts and Reply/Forward threading) is deferred to Phase 4b,
- * since it needs verifying against a real mailbox this sandbox can't reach.
+ * records a copy in its Sent folder — a real IMAP `APPEND` first (Phase 4b),
+ * falling back to a local-only row only if the append itself fails, since
+ * the message has genuinely already been sent either way (§8 item 58).
  */
 final class SmtpMailService
 {
-    private const ATTACHMENTS_DISK = 'local';
-
-    public function __construct(private readonly SmtpTransportFactory $transportFactory)
-    {
+    public function __construct(
+        private readonly SmtpTransportFactory $transportFactory,
+        private readonly ImapConnectionFactory $connectionFactory,
+        private readonly ComposedMimeBuilder $mimeBuilder,
+    ) {
         //
     }
 
@@ -36,53 +38,21 @@ final class SmtpMailService
      * @throws SmtpAuthenticationException when the stored credentials are no longer valid
      * @throws SmtpConnectionException when the server cannot be reached or reports an error
      */
-    public function send(EmailAccount $emailAccount, array $compose): Message
+    public function send(EmailAccount $emailAccount, array $compose, ?Message $inReplyTo = null): Message
     {
-        $email = (new Email)
-            ->from($emailAccount->email)
-            ->to(...$compose['to'])
-            ->subject($compose['subject'])
-            ->html($compose['body_html'])
-            ->text($this->htmlToPlainText($compose['body_html']));
-
-        if ($compose['cc'] !== []) {
-            $email->cc(...$compose['cc']);
-        }
-
-        if ($compose['bcc'] !== []) {
-            $email->bcc(...$compose['bcc']);
-        }
-
-        $storedAttachments = [];
-
-        foreach ($compose['attachments'] as $file) {
-            $storedPath = $file->store('attachments', self::ATTACHMENTS_DISK);
-
-            $storedAttachments[] = [
-                'filename' => $file->getClientOriginalName(),
-                'mime_type' => $file->getMimeType() ?? 'application/octet-stream',
-                'size_bytes' => $file->getSize() ?? 0,
-                'storage_path' => $storedPath,
-            ];
-
-            $email->attachFromPath(
-                Storage::disk(self::ATTACHMENTS_DISK)->path($storedPath),
-                $file->getClientOriginalName(),
-                $file->getMimeType() ?? null,
-            );
-        }
+        $built = $this->mimeBuilder->build($emailAccount, $compose, $inReplyTo);
 
         $transport = $this->transportFactory->connectForAccount($emailAccount);
-        $this->transportFactory->send($transport, $email);
+        $this->transportFactory->send($transport, $built['email']);
 
-        return $this->recordSentCopy($emailAccount, $compose, $storedAttachments);
+        return $this->recordSentCopy($emailAccount, $built, $compose, $inReplyTo);
     }
 
     /**
+     * @param  array{email: Email, message_id: string, attachments: list<array{filename: string, mime_type: string, size_bytes: int, storage_path: string}>}  $built
      * @param  array{to: list<string>, cc: list<string>, bcc: list<string>, subject: string, body_html: string}  $compose
-     * @param  list<array{filename: string, mime_type: string, size_bytes: int, storage_path: string}>  $storedAttachments
      */
-    private function recordSentCopy(EmailAccount $emailAccount, array $compose, array $storedAttachments): Message
+    private function recordSentCopy(EmailAccount $emailAccount, array $built, array $compose, ?Message $inReplyTo): Message
     {
         $sentFolder = $emailAccount->folders()->where('type', 'sent')->first();
 
@@ -96,37 +66,32 @@ final class SmtpMailService
 
             return new Message([
                 'subject' => $compose['subject'],
-                'to' => $this->toRecipientList($compose['to']),
+                'to' => $this->mimeBuilder->toRecipientList($compose['to']),
                 'date' => now(),
                 'is_read' => true,
             ]);
         }
 
-        $host = parse_url((string) config('app.url'), PHP_URL_HOST) ?: 'localhost';
+        $uid = $this->appendToImapFolder($emailAccount, $sentFolder, $built['email']->toString(), $built['message_id']);
 
         $message = $sentFolder->messages()->create([
-            // Phase 4a records the local copy only (no real IMAP APPEND yet,
-            // see the class docblock), so there's no server-assigned UID to
-            // use. A microsecond-resolution timestamp keeps this comfortably
-            // outside the small sequential integers a real IMAP server
-            // hands out, so it won't collide once Phase 4b starts APPENDing
-            // real messages and syncing this folder for real.
-            'uid' => (int) round(microtime(true) * 1_000_000),
-            'rfc_message_id' => '<'.Str::uuid()->toString().'@'.$host.'>',
+            'uid' => $uid,
+            'rfc_message_id' => $built['message_id'],
+            'in_reply_to' => $inReplyTo?->rfc_message_id,
             'subject' => $compose['subject'],
             'from_name' => null,
             'from_email' => $emailAccount->email,
-            'to' => $this->toRecipientList($compose['to']),
-            'cc' => $this->toRecipientList($compose['cc']),
-            'bcc' => $this->toRecipientList($compose['bcc']),
+            'to' => $this->mimeBuilder->toRecipientList($compose['to']),
+            'cc' => $this->mimeBuilder->toRecipientList($compose['cc']),
+            'bcc' => $this->mimeBuilder->toRecipientList($compose['bcc']),
             'date' => now(),
-            'body_text' => $this->htmlToPlainText($compose['body_html']),
+            'body_text' => $this->mimeBuilder->htmlToPlainText($compose['body_html']),
             'body_html' => $compose['body_html'],
             'is_read' => true,
-            'has_attachments' => $storedAttachments !== [],
+            'has_attachments' => $built['attachments'] !== [],
         ]);
 
-        foreach ($storedAttachments as $attachment) {
+        foreach ($built['attachments'] as $attachment) {
             $message->attachments()->create($attachment);
         }
 
@@ -134,16 +99,48 @@ final class SmtpMailService
     }
 
     /**
-     * @param  list<string>  $emails
-     * @return list<array{name: string, email: string}>
+     * Appends the raw MIME to a real IMAP folder and looks the message back
+     * up by the `Message-ID` we set ourselves, to get the server-assigned
+     * UID — webklex doesn't reliably expose the APPENDUID response, so this
+     * mirrors `MessageMoveService`'s "re-fetch by known identifier" pattern
+     * instead of depending on that extension. Any failure here (auth,
+     * connection, folder missing) is logged and falls back to the
+     * microsecond-timestamp synthetic UID this app has used since Phase 4a
+     * (§8 item 42) — a failed append never fails the send itself, since the
+     * message has already genuinely gone out over SMTP.
      */
-    private function toRecipientList(array $emails): array
+    private function appendToImapFolder(EmailAccount $emailAccount, Folder $folder, string $rawMime, string $messageId): int
     {
-        return array_map(fn (string $email) => ['name' => '', 'email' => $email], $emails);
-    }
+        try {
+            $client = $this->connectionFactory->connectForAccount($emailAccount);
 
-    private function htmlToPlainText(string $html): string
-    {
-        return trim(html_entity_decode(strip_tags(str_replace(['<br>', '<br/>', '<br />', '</p>'], "\n", $html))));
+            try {
+                $imapFolder = $this->connectionFactory->guard(fn () => $client->getFolderByPath($folder->name));
+
+                if ($imapFolder === null) {
+                    throw new ImapConnectionException("Folder \"{$folder->name}\" not found on the mail server.");
+                }
+
+                $this->connectionFactory->guard(fn () => $imapFolder->appendMessage($rawMime, ['\Seen']));
+
+                $appended = $this->connectionFactory->guard(
+                    fn () => $imapFolder->query()->whereMessageId($messageId)->leaveUnread()->get()->first(),
+                );
+
+                if ($appended !== null) {
+                    return (int) $appended->uid;
+                }
+            } finally {
+                $this->connectionFactory->disconnect($client);
+            }
+        } catch (ImapAuthenticationException|ImapConnectionException|Throwable $e) {
+            Log::warning('Failed to APPEND a sent copy to the real IMAP Sent folder; recording a local-only copy instead.', [
+                'email_account_id' => $emailAccount->id,
+                'folder' => $folder->name,
+                'exception' => $e->getMessage(),
+            ]);
+        }
+
+        return (int) round(microtime(true) * 1_000_000);
     }
 }

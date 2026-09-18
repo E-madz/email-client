@@ -5,6 +5,7 @@ import { useAccountsStore } from '../stores/accounts'
 import { useFoldersStore } from '../stores/folders'
 import { useMessagesStore } from '../stores/messages'
 import { useComposeStore } from '../stores/compose'
+import { api } from '../lib/api'
 import AccountSwitcher from '../components/AccountSwitcher.vue'
 import FolderList from '../components/FolderList.vue'
 import MessageList from '../components/MessageList.vue'
@@ -34,7 +35,17 @@ function handleFolderSelect(folderId) {
   activeFolderId.value = folderId
 }
 
-function openMessage(messageId) {
+async function openMessage(messageId) {
+  const activeFolder = folders.items.find((folder) => folder.id === activeFolderId.value)
+
+  // A draft isn't read, it's edited — open it straight into the composer
+  // instead of the read-only reader (CLAUDE.md §8, Phase 4b).
+  if (activeFolder?.type === 'drafts') {
+    const full = await api.get(`/messages/${messageId}`)
+    compose.openDraft(activeAccountId.value, full)
+    return
+  }
+
   messages.openMessage(messageId)
 }
 

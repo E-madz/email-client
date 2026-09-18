@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Http\Controllers\Api\AttachmentController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\ComposeController;
+use App\Http\Controllers\Api\DraftController;
 use App\Http\Controllers\Api\EmailAccountController;
 use App\Http\Controllers\Api\FolderController;
 use App\Http\Controllers\Api\MessageController;
@@ -36,6 +37,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::patch('/messages/{message}/move', [MessageController::class, 'move']);
         Route::delete('/messages/{message}', [MessageController::class, 'destroy']);
         Route::post('/email-accounts/{emailAccount}/messages', [ComposeController::class, 'send']);
+        Route::post('/email-accounts/{emailAccount}/drafts', [DraftController::class, 'store']);
+        Route::put('/drafts/{message}', [DraftController::class, 'update']);
         Route::delete('/folders/{folder}/messages', [FolderController::class, 'emptyTrash']);
     });
 

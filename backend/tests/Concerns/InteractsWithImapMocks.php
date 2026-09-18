@@ -128,6 +128,36 @@ trait InteractsWithImapMocks
     }
 
     /**
+     * Wires up ClientManager -> Client -> Folder so that appending a raw MIME
+     * message succeeds and the subsequent by-Message-ID lookup
+     * (`SmtpMailService`/`DraftService`'s "find the UID we just got assigned"
+     * step) returns a message with the given UID.
+     */
+    protected function mockSuccessfulImapAppend(int $uid = 501): void
+    {
+        $appended = $this->mockImapMessage(['uid' => $uid]);
+
+        $whereQuery = Mockery::mock(WhereQuery::class);
+        $whereQuery->shouldReceive('whereMessageId')->andReturnSelf();
+        $whereQuery->shouldReceive('whereUid')->andReturnSelf();
+        $whereQuery->shouldReceive('leaveUnread')->andReturnSelf();
+        $whereQuery->shouldReceive('get')->andReturn(MessageCollection::make([$appended]));
+
+        $imapFolder = Mockery::mock(ImapFolder::class);
+        $imapFolder->shouldReceive('appendMessage')->andReturn([]);
+        $imapFolder->shouldReceive('query')->andReturn($whereQuery);
+
+        $client = Mockery::mock(Client::class);
+        $client->shouldReceive('connect')->andReturnSelf();
+        $client->shouldReceive('disconnect')->andReturnSelf();
+        $client->shouldReceive('getFolderByPath')->andReturn($imapFolder);
+
+        $this->mock(ClientManager::class, function (MockInterface $mock) use ($client) {
+            $mock->shouldReceive('make')->andReturn($client);
+        });
+    }
+
+    /**
      * Wires up ClientManager -> Client -> raw LIST response, for
      * FolderSyncService, which reads folder flags directly off the
      * connection rather than through the lossy Folder wrapper (see

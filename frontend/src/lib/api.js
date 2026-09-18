@@ -131,5 +131,12 @@ export const api = {
   patch: (path, body, options) => request(path, { ...options, method: 'PATCH', body }),
   delete: (path, options) => request(path, { ...options, method: 'DELETE' }),
   postForm: (path, formData, options) => request(path, { ...options, method: 'POST', body: formData, isFormData: true }),
+  // PHP never parses a multipart body on a real PUT request, so this rides
+  // Laravel's standard `_method` override on a POST instead (Illuminate\Http\Request
+  // enables this by default) — needed for updating a draft's attachments.
+  putForm: (path, formData, options) => {
+    formData.append('_method', 'PUT')
+    return request(path, { ...options, method: 'POST', body: formData, isFormData: true })
+  },
   downloadBlob,
 }
