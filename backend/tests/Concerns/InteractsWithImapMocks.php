@@ -135,9 +135,19 @@ trait InteractsWithImapMocks
      */
     protected function mockSuccessfulImapAppend(int $uid = 501): void
     {
+        // Not used by SmtpMailService (never looks up an old copy), but
+        // DraftService::update() always looks for the previous draft copy
+        // to delete by UID first — an empty result here just means "nothing
+        // to delete", which is fine for callers that don't care about that.
+        $whereQuery = Mockery::mock(WhereQuery::class);
+        $whereQuery->shouldReceive('whereUid')->andReturnSelf();
+        $whereQuery->shouldReceive('leaveUnread')->andReturnSelf();
+        $whereQuery->shouldReceive('get')->andReturn(MessageCollection::make([]));
+
         $imapFolder = Mockery::mock(ImapFolder::class);
         $imapFolder->shouldReceive('examine')->andReturn(['uidnext' => $uid]);
         $imapFolder->shouldReceive('appendMessage')->andReturn([]);
+        $imapFolder->shouldReceive('query')->andReturn($whereQuery);
 
         $client = Mockery::mock(Client::class);
         $client->shouldReceive('connect')->andReturnSelf();

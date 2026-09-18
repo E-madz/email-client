@@ -42,17 +42,20 @@ function forwardBody(message) {
 
 /**
  * Phase 4b: compose now covers plain send (Phase 4a), Reply/Forward
- * threading, and Drafts save/edit — CLAUDE.md §8. Note editing an existing
- * draft's attachments is all-or-nothing (§8 item 60): a previously-saved
- * draft's attachments can't be re-populated as re-uploadable files in the
- * browser, so saving an edit without re-attaching them replaces them with
- * none. Attaching new files on edit always replaces whatever was there.
+ * threading, and Drafts save/edit — CLAUDE.md §8. Editing an existing
+ * draft's attachments (§8 item 62): its already-saved attachments come back
+ * as metadata only (`existingAttachments`, not re-uploadable browser `File`
+ * objects) and are kept server-side via `keep_attachment_ids` unless the
+ * user explicitly removes one; newly added files are uploaded alongside.
  */
 export const useComposeStore = defineStore('compose', {
   state: () => ({
     isOpen: false,
     accountId: null,
     draft: emptyDraft(),
+    // Metadata-only list of a draft's already-saved attachments
+    // ({id, filename, mime_type, size_bytes}) — kept unless removed.
+    existingAttachments: [],
     sending: false,
     savingDraft: false,
     error: null,
@@ -66,6 +69,7 @@ export const useComposeStore = defineStore('compose', {
     open(accountId) {
       this.accountId = accountId
       this.draft = emptyDraft()
+      this.existingAttachments = []
       this.mode = 'new'
       this.editingDraftId = null
       this.replyToMessageId = null
@@ -81,6 +85,7 @@ export const useComposeStore = defineStore('compose', {
         subject: message.subject?.startsWith('Re:') ? message.subject : `Re: ${message.subject ?? ''}`,
         bodyText: quote(message),
       }
+      this.existingAttachments = []
       this.mode = 'reply'
       this.editingDraftId = null
       this.replyToMessageId = message.id
@@ -95,6 +100,7 @@ export const useComposeStore = defineStore('compose', {
         subject: message.subject?.startsWith('Fwd:') ? message.subject : `Fwd: ${message.subject ?? ''}`,
         bodyText: forwardBody(message),
       }
+      this.existingAttachments = []
       this.mode = 'forward'
       this.editingDraftId = null
       this.replyToMessageId = null
@@ -104,7 +110,7 @@ export const useComposeStore = defineStore('compose', {
 
     /**
      * `message` is a full MessageDetailResource (already fetched via
-     * GET /messages/{id}) so body_html/body_text are available.
+     * GET /messages/{id}) so body_html/body_text/attachments are available.
      */
     openDraft(accountId, message) {
       this.accountId = accountId
@@ -116,6 +122,7 @@ export const useComposeStore = defineStore('compose', {
         bodyText: plainTextFromMessage(message),
         attachments: [],
       }
+      this.existingAttachments = message.attachments ?? []
       this.mode = 'draft'
       this.editingDraftId = message.id
       this.replyToMessageId = null
@@ -133,6 +140,10 @@ export const useComposeStore = defineStore('compose', {
 
     removeAttachment(index) {
       this.draft.attachments = this.draft.attachments.filter((_, i) => i !== index)
+    },
+
+    removeExistingAttachment(id) {
+      this.existingAttachments = this.existingAttachments.filter((attachment) => attachment.id !== id)
     },
 
     /**
@@ -194,6 +205,9 @@ export const useComposeStore = defineStore('compose', {
         const formData = this.buildFormData()
 
         if (this.editingDraftId) {
+          this.existingAttachments.forEach((attachment) => {
+            formData.append('keep_attachment_ids[]', String(attachment.id))
+          })
           await api.putForm(`/drafts/${this.editingDraftId}`, formData)
         } else {
           await api.postForm(`/email-accounts/${this.accountId}/drafts`, formData)

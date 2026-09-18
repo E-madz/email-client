@@ -26,9 +26,13 @@ final class ComposedMimeBuilder
 
     /**
      * @param  array{to?: list<string>, cc?: list<string>, bcc?: list<string>, subject?: string, body_html?: string, attachments?: list<UploadedFile>}  $compose
+     * @param  list<array{filename: string, mime_type: string, storage_path: string}>  $existingAttachments  Already-stored
+     *                                                                                                       attachments (e.g. a draft's previously-saved ones being kept, §8 item 62) to re-attach from disk — since
+     *                                                                                                       editing a draft is delete-then-append, anything not re-included in the new raw MIME would vanish from the
+     *                                                                                                       server copy even if its local DB row survives
      * @return array{email: Email, message_id: string, attachments: list<array{filename: string, mime_type: string, size_bytes: int, storage_path: string}>}
      */
-    public function build(EmailAccount $emailAccount, array $compose, ?Message $inReplyTo = null): array
+    public function build(EmailAccount $emailAccount, array $compose, ?Message $inReplyTo = null, array $existingAttachments = []): array
     {
         $subject = $compose['subject'] ?? '';
         $bodyHtml = $compose['body_html'] ?? '';
@@ -73,6 +77,14 @@ final class ComposedMimeBuilder
                 array_filter(explode(' ', $referenceChain)),
             );
             $email->getHeaders()->addIdHeader('References', $references);
+        }
+
+        foreach ($existingAttachments as $existing) {
+            $email->attachFromPath(
+                Storage::disk(self::ATTACHMENTS_DISK)->path($existing['storage_path']),
+                $existing['filename'],
+                $existing['mime_type'],
+            );
         }
 
         $storedAttachments = [];

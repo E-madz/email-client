@@ -63,7 +63,7 @@ class DraftController extends Controller
     }
 
     /**
-     * @return array{to: list<string>, cc: list<string>, bcc: list<string>, subject: string, body_html: string, attachments: list<UploadedFile>}
+     * @return array{to: list<string>, cc: list<string>, bcc: list<string>, subject: string, body_html: string, attachments: list<UploadedFile>, keep_attachment_ids: list<int>}
      */
     private function composeInput(Request $request): array
     {
@@ -74,6 +74,7 @@ class DraftController extends Controller
             'subject' => $request->input('subject', ''),
             'body_html' => $request->input('body_html', ''),
             'attachments' => $request->file('attachments', []),
+            'keep_attachment_ids' => array_map('intval', $request->input('keep_attachment_ids', [])),
         ];
     }
 }

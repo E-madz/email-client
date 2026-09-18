@@ -137,10 +137,30 @@ const titles = {
             <input type="file" multiple class="hidden" @change="handleFileChange" />
           </label>
 
-          <p v-if="compose.mode === 'draft'" class="mt-1.5 text-xs text-gray-400">
-            پیوست‌های قبلی این پیش‌نویس در اینجا نشان داده نمی‌شوند؛ اگر بدون افزودن پیوست جدید ذخیره کنید، پیوست‌های قبلی حذف
-            می‌شوند.
-          </p>
+          <ul v-if="compose.existingAttachments.length" class="mt-2 space-y-1">
+            <li
+              v-for="attachment in compose.existingAttachments"
+              :key="`existing-${attachment.id}`"
+              class="flex items-center justify-between rounded-lg bg-gray-50 px-2.5 py-1.5 text-xs text-gray-600"
+            >
+              <span class="truncate" dir="ltr">{{ attachment.filename }}</span>
+              <div class="flex shrink-0 items-center gap-2">
+                <span class="text-gray-400">{{ formatSize(attachment.size_bytes) }}</span>
+                <button
+                  type="button"
+                  class="rounded p-0.5 text-gray-400 hover:bg-gray-200 hover:text-gray-600"
+                  aria-label="حذف پیوست"
+                  @click="compose.removeExistingAttachment(attachment.id)"
+                >
+                  <svg class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                    <path
+                      d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z"
+                    />
+                  </svg>
+                </button>
+              </div>
+            </li>
+          </ul>
 
           <ul v-if="compose.draft.attachments.length" class="mt-2 space-y-1">
             <li

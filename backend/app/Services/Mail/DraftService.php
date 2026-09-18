@@ -92,7 +92,7 @@ final class DraftService
     }
 
     /**
-     * @param  array{to?: list<string>, cc?: list<string>, bcc?: list<string>, subject?: string, body_html?: string, attachments?: list<UploadedFile>}  $compose
+     * @param  array{to?: list<string>, cc?: list<string>, bcc?: list<string>, subject?: string, body_html?: string, attachments?: list<UploadedFile>, keep_attachment_ids?: list<int>}  $compose
      *
      * @throws ImapAuthenticationException when the stored credentials are no longer valid
      * @throws ImapConnectionException when the server cannot be reached or reports an error
@@ -102,7 +102,25 @@ final class DraftService
         $draftsFolder = $draft->folder;
         $emailAccount = $draftsFolder->emailAccount;
 
-        $built = $this->mimeBuilder->build($emailAccount, $compose);
+        // A previously-saved attachment being kept has to be re-attached from
+        // disk into the new outgoing MIME too — editing a draft is
+        // delete-then-append, so anything not included here would vanish
+        // from the server copy even though its local DB row survives (§8
+        // item 62).
+        $keepIds = $compose['keep_attachment_ids'] ?? [];
+        $keptAttachments = $draft->attachments()->whereIn('id', $keepIds)->get();
+
+        $existingForMime = $keptAttachments
+            ->filter(fn ($attachment) => $attachment->storage_path !== null)
+            ->map(fn ($attachment) => [
+                'filename' => $attachment->filename,
+                'mime_type' => $attachment->mime_type,
+                'storage_path' => $attachment->storage_path,
+            ])
+            ->values()
+            ->all();
+
+        $built = $this->mimeBuilder->build($emailAccount, $compose, existingAttachments: $existingForMime);
 
         $client = $this->connectionFactory->connectForAccount($emailAccount);
 
@@ -132,10 +150,10 @@ final class DraftService
             'bcc' => $this->mimeBuilder->toRecipientList($compose['bcc'] ?? []),
             'body_text' => $this->mimeBuilder->htmlToPlainText($compose['body_html'] ?? ''),
             'body_html' => $compose['body_html'] ?? '',
-            'has_attachments' => $built['attachments'] !== [],
+            'has_attachments' => $keptAttachments->isNotEmpty() || $built['attachments'] !== [],
         ]);
 
-        $draft->attachments()->delete();
+        $draft->attachments()->whereNotIn('id', $keepIds)->delete();
 
         foreach ($built['attachments'] as $attachment) {
             $draft->attachments()->create($attachment);
