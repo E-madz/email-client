@@ -9,6 +9,7 @@ use App\Exceptions\Mail\ImapConnectionException;
 use App\Models\EmailAccount;
 use App\Models\Message;
 use Illuminate\Http\UploadedFile;
+use Webklex\PHPIMAP\Folder as ImapFolder;
 
 /**
  * Saves and updates Drafts — unlike a Sent-copy (§8 item 58), a draft has no
@@ -18,6 +19,14 @@ use Illuminate\Http\UploadedFile;
  * Editing a draft is IMAP's standard delete-then-append (no in-place edit),
  * same as `FolderCreationService`/`FolderDeletionService`'s connect→guard→
  * disconnect pattern.
+ *
+ * The UID of a just-appended message is learned via `EXAMINE`'s `UIDNEXT`
+ * (RFC 3501), read right before the `APPEND` — not by searching for the
+ * `Message-ID` we set, which a real IranServer account showed can return the
+ * wrong (existing) message (§8 item 61). Unlike `SmtpMailService`, a wrong
+ * UID here is never acceptable even as a fallback: `update()`'s next edit
+ * relies on the stored UID to find and delete the previous copy, so getting
+ * it wrong would leave stale/duplicate drafts on the server.
  */
 final class DraftService
 {
@@ -54,17 +63,13 @@ final class DraftService
                 throw new ImapConnectionException("Folder \"{$draftsFolder->name}\" not found on the mail server.");
             }
 
-            $this->connectionFactory->guard(fn () => $imapFolder->appendMessage($built['email']->toString(), ['\Seen']));
-
-            $appended = $this->connectionFactory->guard(
-                fn () => $imapFolder->query()->whereMessageId($built['message_id'])->leaveUnread()->get()->first(),
-            );
+            $uid = $this->appendAndGetUid($imapFolder, $built['email']->toString());
         } finally {
             $this->connectionFactory->disconnect($client);
         }
 
         $message = $draftsFolder->messages()->create([
-            'uid' => $appended !== null ? (int) $appended->uid : (int) round(microtime(true) * 1_000_000),
+            'uid' => $uid,
             'rfc_message_id' => $built['message_id'],
             'subject' => $compose['subject'] ?? '',
             'from_name' => null,
@@ -113,17 +118,13 @@ final class DraftService
             );
             $existing?->delete();
 
-            $this->connectionFactory->guard(fn () => $imapFolder->appendMessage($built['email']->toString(), ['\Seen']));
-
-            $appended = $this->connectionFactory->guard(
-                fn () => $imapFolder->query()->whereMessageId($built['message_id'])->leaveUnread()->get()->first(),
-            );
+            $uid = $this->appendAndGetUid($imapFolder, $built['email']->toString());
         } finally {
             $this->connectionFactory->disconnect($client);
         }
 
         $draft->update([
-            'uid' => $appended !== null ? (int) $appended->uid : $draft->uid,
+            'uid' => $uid,
             'rfc_message_id' => $built['message_id'],
             'subject' => $compose['subject'] ?? '',
             'to' => $this->mimeBuilder->toRecipientList($compose['to'] ?? []),
@@ -141,5 +142,22 @@ final class DraftService
         }
 
         return $draft->refresh();
+    }
+
+    /**
+     * @throws ImapConnectionException when the server doesn't report a usable UIDNEXT
+     */
+    private function appendAndGetUid(ImapFolder $imapFolder, string $rawMime): int
+    {
+        $status = $this->connectionFactory->guard(fn () => $imapFolder->examine());
+        $expectedUid = (int) ($status['uidnext'] ?? 0);
+
+        if ($expectedUid <= 0) {
+            throw new ImapConnectionException('The mail server did not report a UID for the new draft.');
+        }
+
+        $this->connectionFactory->guard(fn () => $imapFolder->appendMessage($rawMime, ['\Seen']));
+
+        return $expectedUid;
     }
 }

@@ -129,23 +129,15 @@ trait InteractsWithImapMocks
 
     /**
      * Wires up ClientManager -> Client -> Folder so that appending a raw MIME
-     * message succeeds and the subsequent by-Message-ID lookup
-     * (`SmtpMailService`/`DraftService`'s "find the UID we just got assigned"
-     * step) returns a message with the given UID.
+     * message succeeds and reports the given UID via `EXAMINE`'s `UIDNEXT`
+     * (`SmtpMailService`/`DraftService`'s "find the UID we just got
+     * assigned" step, §8 item 61 — no longer a post-append search).
      */
     protected function mockSuccessfulImapAppend(int $uid = 501): void
     {
-        $appended = $this->mockImapMessage(['uid' => $uid]);
-
-        $whereQuery = Mockery::mock(WhereQuery::class);
-        $whereQuery->shouldReceive('whereMessageId')->andReturnSelf();
-        $whereQuery->shouldReceive('whereUid')->andReturnSelf();
-        $whereQuery->shouldReceive('leaveUnread')->andReturnSelf();
-        $whereQuery->shouldReceive('get')->andReturn(MessageCollection::make([$appended]));
-
         $imapFolder = Mockery::mock(ImapFolder::class);
+        $imapFolder->shouldReceive('examine')->andReturn(['uidnext' => $uid]);
         $imapFolder->shouldReceive('appendMessage')->andReturn([]);
-        $imapFolder->shouldReceive('query')->andReturn($whereQuery);
 
         $client = Mockery::mock(Client::class);
         $client->shouldReceive('connect')->andReturnSelf();

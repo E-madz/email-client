@@ -10,6 +10,8 @@ use App\Models\Message;
 use App\Models\User;
 use Database\Seeders\MailServerSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 use Mockery;
 use Mockery\MockInterface;
 use Tests\Concerns\InteractsWithImapMocks;
@@ -53,6 +55,27 @@ class DraftControllerTest extends TestCase
             'subject' => 'Draft subject',
             'uid' => 42,
         ]);
+    }
+
+    public function test_saving_a_new_draft_with_an_attachment_stores_it(): void
+    {
+        Storage::fake('local');
+        $this->mockSuccessfulImapAppend();
+
+        $user = User::factory()->create();
+        $account = EmailAccount::factory()->for($user)->create();
+        Folder::factory()->for($account)->create(['name' => 'Drafts', 'type' => 'drafts']);
+
+        $file = UploadedFile::fake()->create('draft.pdf', 20, 'application/pdf');
+
+        $response = $this->actingAs($user, 'sanctum')->post("/api/email-accounts/{$account->id}/drafts", [
+            'subject' => 'Draft with file',
+            'attachments' => [$file],
+        ]);
+
+        $response->assertCreated();
+        $response->assertJsonPath('attachments.0.filename', 'draft.pdf');
+        $this->assertDatabaseHas('message_attachments', ['filename' => 'draft.pdf']);
     }
 
     public function test_saving_a_draft_without_any_field_filled_in_succeeds(): void
@@ -107,19 +130,15 @@ class DraftControllerTest extends TestCase
     {
         $existingImapMessage = $this->mockImapMessage(['uid' => 10]);
         $existingImapMessage->shouldReceive('delete')->once()->andReturnTrue();
-        $newImapMessage = $this->mockImapMessage(['uid' => 11]);
 
         $whereQuery = Mockery::mock(WhereQuery::class);
         $whereQuery->shouldReceive('whereUid')->andReturnSelf();
-        $whereQuery->shouldReceive('whereMessageId')->andReturnSelf();
         $whereQuery->shouldReceive('leaveUnread')->andReturnSelf();
-        $whereQuery->shouldReceive('get')->andReturn(
-            MessageCollection::make([$existingImapMessage]),
-            MessageCollection::make([$newImapMessage]),
-        );
+        $whereQuery->shouldReceive('get')->andReturn(MessageCollection::make([$existingImapMessage]));
 
         $imapFolder = Mockery::mock(\Webklex\PHPIMAP\Folder::class);
         $imapFolder->shouldReceive('query')->andReturn($whereQuery);
+        $imapFolder->shouldReceive('examine')->andReturn(['uidnext' => 11]);
         $imapFolder->shouldReceive('appendMessage')->once()->andReturn([]);
 
         $client = Mockery::mock(Client::class);
@@ -148,6 +167,49 @@ class DraftControllerTest extends TestCase
             'subject' => 'Updated subject',
             'uid' => 11,
         ]);
+    }
+
+    public function test_updating_a_draft_via_method_spoofed_post_with_an_attachment_stores_it(): void
+    {
+        Storage::fake('local');
+
+        $existingImapMessage = $this->mockImapMessage(['uid' => 10]);
+        $existingImapMessage->shouldReceive('delete')->once()->andReturnTrue();
+
+        $whereQuery = Mockery::mock(WhereQuery::class);
+        $whereQuery->shouldReceive('whereUid')->andReturnSelf();
+        $whereQuery->shouldReceive('leaveUnread')->andReturnSelf();
+        $whereQuery->shouldReceive('get')->andReturn(MessageCollection::make([$existingImapMessage]));
+
+        $imapFolder = Mockery::mock(\Webklex\PHPIMAP\Folder::class);
+        $imapFolder->shouldReceive('query')->andReturn($whereQuery);
+        $imapFolder->shouldReceive('examine')->andReturn(['uidnext' => 55]);
+        $imapFolder->shouldReceive('appendMessage')->once()->andReturn([]);
+
+        $client = Mockery::mock(Client::class);
+        $client->shouldReceive('connect')->andReturnSelf();
+        $client->shouldReceive('disconnect')->andReturnSelf();
+        $client->shouldReceive('getFolderByPath')->andReturn($imapFolder);
+        $this->mock(ClientManager::class, function (MockInterface $mock) use ($client) {
+            $mock->shouldReceive('make')->andReturn($client);
+        });
+
+        $user = User::factory()->create();
+        $account = EmailAccount::factory()->for($user)->create();
+        $drafts = Folder::factory()->for($account)->create(['name' => 'Drafts', 'type' => 'drafts']);
+        $draft = Message::factory()->for($drafts)->create(['uid' => 10, 'subject' => 'Old subject']);
+
+        $file = UploadedFile::fake()->create('draft2.pdf', 20, 'application/pdf');
+
+        $response = $this->actingAs($user, 'sanctum')->post("/api/drafts/{$draft->id}", [
+            '_method' => 'PUT',
+            'subject' => 'Updated with file',
+            'attachments' => [$file],
+        ]);
+
+        $response->assertOk();
+        $response->assertJsonPath('attachments.0.filename', 'draft2.pdf');
+        $this->assertDatabaseHas('message_attachments', ['message_id' => $draft->id, 'filename' => 'draft2.pdf']);
     }
 
     public function test_updating_a_non_draft_message_is_rejected(): void

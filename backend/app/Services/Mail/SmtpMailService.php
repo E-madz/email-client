@@ -72,7 +72,7 @@ final class SmtpMailService
             ]);
         }
 
-        $uid = $this->appendToImapFolder($emailAccount, $sentFolder, $built['email']->toString(), $built['message_id']);
+        $uid = $this->appendToImapFolder($emailAccount, $sentFolder, $built['email']->toString());
 
         $message = $sentFolder->messages()->create([
             'uid' => $uid,
@@ -99,17 +99,37 @@ final class SmtpMailService
     }
 
     /**
-     * Appends the raw MIME to a real IMAP folder and looks the message back
-     * up by the `Message-ID` we set ourselves, to get the server-assigned
-     * UID — webklex doesn't reliably expose the APPENDUID response, so this
-     * mirrors `MessageMoveService`'s "re-fetch by known identifier" pattern
-     * instead of depending on that extension. Any failure here (auth,
-     * connection, folder missing) is logged and falls back to the
-     * microsecond-timestamp synthetic UID this app has used since Phase 4a
-     * (§8 item 42) — a failed append never fails the send itself, since the
-     * message has already genuinely gone out over SMTP.
+     * Appends the raw MIME to a real IMAP folder and returns the UID the
+     * appended message will get.
+     *
+     * **Real-world lesson (§8 item 61):** an earlier version located the
+     * appended message afterward by searching for the `Message-ID` we set
+     * ourselves (`whereMessageId()->get()->first()`) — but a real IranServer
+     * account showed this search isn't reliable: instead of matching only
+     * our new message, it silently returned an unrelated *existing* message
+     * in the folder (its `->first()` acting more like "the first message in
+     * the folder" than an actual filtered match). That existing message's
+     * UID then got stored as if it belonged to the new Sent/Draft copy —
+     * and the next real sync of that folder would overwrite our local row
+     * back to the old message's real content, since `MessageSyncService`
+     * matches by `(folder_id, uid)`. The user saw this as "replying doesn't
+     * add new messages, it's always just the first one."
+     *
+     * Fixed by never trusting a post-append search at all: `EXAMINE`'s
+     * `UIDNEXT` (RFC 3501) is the UID the *next* appended message is
+     * guaranteed to receive, read right before the `APPEND` — a value the
+     * protocol requires the server to report accurately, unlike an optional
+     * search feature. This app is single-writer per account (one user, one
+     * session), so nothing else appends to the folder between the `EXAMINE`
+     * and the `APPEND` in practice.
+     *
+     * Any failure here (auth, connection, folder missing) is logged and
+     * falls back to the microsecond-timestamp synthetic UID this app has
+     * used since Phase 4a (§8 item 42) — a failed append never fails the
+     * send itself, since the message has already genuinely gone out over
+     * SMTP.
      */
-    private function appendToImapFolder(EmailAccount $emailAccount, Folder $folder, string $rawMime, string $messageId): int
+    private function appendToImapFolder(EmailAccount $emailAccount, Folder $folder, string $rawMime): int
     {
         try {
             $client = $this->connectionFactory->connectForAccount($emailAccount);
@@ -121,14 +141,13 @@ final class SmtpMailService
                     throw new ImapConnectionException("Folder \"{$folder->name}\" not found on the mail server.");
                 }
 
+                $status = $this->connectionFactory->guard(fn () => $imapFolder->examine());
+                $expectedUid = (int) ($status['uidnext'] ?? 0);
+
                 $this->connectionFactory->guard(fn () => $imapFolder->appendMessage($rawMime, ['\Seen']));
 
-                $appended = $this->connectionFactory->guard(
-                    fn () => $imapFolder->query()->whereMessageId($messageId)->leaveUnread()->get()->first(),
-                );
-
-                if ($appended !== null) {
-                    return (int) $appended->uid;
+                if ($expectedUid > 0) {
+                    return $expectedUid;
                 }
             } finally {
                 $this->connectionFactory->disconnect($client);
