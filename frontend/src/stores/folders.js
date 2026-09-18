@@ -78,6 +78,21 @@ export const useFoldersStore = defineStore('folders', {
       }
     },
 
+    /**
+     * A real IMAP `DELETE` (see FolderDeletionService) — only custom
+     * folders can be deleted this way; a non-empty folder's messages are
+     * deleted along with it, which the caller is expected to have warned
+     * about before calling this.
+     */
+    async deleteFolder(folderId) {
+      await api.delete(`/folders/${folderId}`)
+      this.items = this.items.filter((folder) => folder.id !== folderId)
+      if (this.activeId === folderId) {
+        const inbox = this.items.find((folder) => folder.type === 'inbox')
+        this.setActive(inbox?.id ?? this.items[0]?.id ?? null)
+      }
+    },
+
     setActive(id) {
       this.activeId = id
     },

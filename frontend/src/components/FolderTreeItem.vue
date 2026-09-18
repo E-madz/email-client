@@ -6,9 +6,10 @@ const props = defineProps({
   depth: { type: Number, default: 0 },
   activeId: { type: [Number, String], default: null },
   icons: { type: Object, required: true },
+  deletingId: { type: [Number, String], default: null },
 })
 
-const emit = defineEmits(['select', 'drop-message'])
+const emit = defineEmits(['select', 'drop-message', 'delete'])
 
 // Starred is a virtual, cross-folder view (CLAUDE.md §8) — a message can't
 // be "moved into" it, so it's not a valid drop target.
@@ -31,30 +32,51 @@ function handleDrop(event) {
 
 <template>
   <li>
-    <button
-      type="button"
-      class="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-sm transition"
-      :style="{ paddingInlineStart: `${0.5 + depth * 1.25}rem` }"
+    <div
+      class="group flex items-center gap-1 rounded-lg transition"
       :class="[
         folder.id === activeId ? 'bg-indigo-50 font-medium text-indigo-700' : 'text-gray-700 hover:bg-gray-100',
         isDragOver ? 'outline outline-2 outline-indigo-400' : '',
       ]"
-      @click="emit('select', folder.id)"
       @dragover="handleDragOver"
       @dragleave="isDragOver = false"
       @drop="handleDrop"
     >
-      <svg class="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true">
-        <path stroke-linecap="round" stroke-linejoin="round" :d="icons[folder.type] ?? icons.custom" />
-      </svg>
-      <span class="flex-1 truncate text-left" dir="ltr">{{ folder.display_name }}</span>
-      <span
-        v-if="folder.unread_count > 0"
-        class="rounded-full bg-indigo-600 px-1.5 py-0.5 text-[10px] font-semibold text-white"
+      <button
+        type="button"
+        class="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-sm"
+        :style="{ paddingInlineStart: `${0.5 + depth * 1.25}rem` }"
+        @click="emit('select', folder.id)"
       >
-        {{ folder.unread_count }}
-      </span>
-    </button>
+        <svg class="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" :d="icons[folder.type] ?? icons.custom" />
+        </svg>
+        <span class="flex-1 truncate text-left" dir="ltr">{{ folder.display_name }}</span>
+        <span
+          v-if="folder.unread_count > 0"
+          class="rounded-full bg-indigo-600 px-1.5 py-0.5 text-[10px] font-semibold text-white"
+        >
+          {{ folder.unread_count }}
+        </span>
+      </button>
+
+      <button
+        v-if="folder.type === 'custom'"
+        type="button"
+        :disabled="deletingId === folder.id"
+        class="mr-1 shrink-0 rounded p-1 text-gray-300 opacity-0 group-hover:opacity-100 hover:bg-gray-200 hover:text-red-500 focus:opacity-100 disabled:cursor-wait disabled:opacity-100"
+        aria-label="حذف پوشه"
+        @click="emit('delete', folder)"
+      >
+        <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true">
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            d="m14.74 9-.346 9M9.606 9l.346 9M4.772 5.79A2.25 2.25 0 0 1 6.999 4h9.998a2.25 2.25 0 0 1 2.227 1.79M4.772 5.79 4 5.018M4.772 5.79 6.09 21.243A2.25 2.25 0 0 0 8.334 23h7.332a2.25 2.25 0 0 0 2.244-2.007L19 5.79M19.228 5.79H4.772"
+          />
+        </svg>
+      </button>
+    </div>
 
     <ul v-if="folder.children.length" class="space-y-0.5">
       <FolderTreeItem
@@ -64,8 +86,10 @@ function handleDrop(event) {
         :depth="depth + 1"
         :active-id="activeId"
         :icons="icons"
+        :deleting-id="deletingId"
         @select="(id) => emit('select', id)"
         @drop-message="(payload) => emit('drop-message', payload)"
+        @delete="(folder) => emit('delete', folder)"
       />
     </ul>
   </li>

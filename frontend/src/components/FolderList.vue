@@ -47,6 +47,29 @@ function handleDropMessage({ folderId, messageId }) {
   messages.moveMessage(messageId, folderId)
 }
 
+const deletingFolderId = ref(null)
+const deleteError = ref(null)
+
+async function handleDeleteFolder(folder) {
+  const warning =
+    folder.unread_count > 0
+      ? `پوشه‌ی «${folder.display_name}» حذف شود؟ این پوشه پیام‌های خوانده‌نشده دارد و همه‌ی پیام‌های داخل آن هم برای همیشه حذف می‌شوند. این کار قابل بازگشت نیست.`
+      : `پوشه‌ی «${folder.display_name}» حذف شود؟ اگر پیامی داخل آن باشد، همراه با پوشه برای همیشه حذف می‌شود. این کار قابل بازگشت نیست.`
+
+  if (!confirm(warning)) return
+
+  deletingFolderId.value = folder.id
+  deleteError.value = null
+
+  try {
+    await folders.deleteFolder(folder.id)
+  } catch (error) {
+    deleteError.value = error
+  } finally {
+    deletingFolderId.value = null
+  }
+}
+
 const FOLDER_ICONS = {
   inbox:
     'M3 12h4.5l1.5 3h6l1.5-3H21M3 12v6.75A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V12M3 12l2.25-6.75A1.5 1.5 0 0 1 6.68 4.25h10.64a1.5 1.5 0 0 1 1.43 1L21 12',
@@ -216,9 +239,15 @@ onMounted(loadFolders)
         :folder="folder"
         :active-id="folders.activeId"
         :icons="FOLDER_ICONS"
+        :deleting-id="deletingFolderId"
         @select="selectFolder"
         @drop-message="handleDropMessage"
+        @delete="handleDeleteFolder"
       />
     </ul>
+
+    <p v-if="deleteError" class="mt-1.5 px-1 text-xs text-red-600">
+      {{ deleteError?.message ?? 'حذف پوشه با خطا مواجه شد.' }}
+    </p>
   </div>
 </template>

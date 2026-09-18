@@ -14,6 +14,7 @@ use App\Http\Resources\MessageResource;
 use App\Models\EmailAccount;
 use App\Models\Folder;
 use App\Services\Mail\FolderCreationService;
+use App\Services\Mail\FolderDeletionService;
 use App\Services\Mail\FolderSyncService;
 use App\Services\Mail\MessageDeletionService;
 use App\Services\Mail\MessageSyncService;
@@ -29,6 +30,7 @@ class FolderController extends Controller
         private readonly MessageSyncService $messageSyncService,
         private readonly MessageDeletionService $messageDeletionService,
         private readonly FolderCreationService $folderCreationService,
+        private readonly FolderDeletionService $folderDeletionService,
     ) {
         //
     }
@@ -101,5 +103,28 @@ class FolderController extends Controller
         }
 
         return response()->json(['deleted' => $deleted]);
+    }
+
+    /**
+     * Delete a folder the user created — a real IMAP `DELETE`, only mirrored
+     * locally once the server confirms it. Restricted to `custom`-type
+     * folders: a system folder (Inbox/Sent/Drafts/Trash/Spam/Archive) can
+     * never be deleted through this endpoint, regardless of what the client
+     * sends. Deleting a non-empty folder deletes its messages too — IMAP has
+     * no "move contents to Trash first" step for a mailbox deletion, so the
+     * frontend is expected to warn about this before calling it.
+     */
+    public function destroy(Request $request, Folder $folder): JsonResponse
+    {
+        abort_unless($folder->emailAccount->user_id === $request->user()->id, 403);
+        abort_unless($folder->type === 'custom', 422, 'Only folders you created yourself can be deleted.');
+
+        try {
+            $this->folderDeletionService->delete($folder);
+        } catch (ImapAuthenticationException|ImapConnectionException $e) {
+            return $this->respondToImapFailure($folder->emailAccount, $e);
+        }
+
+        return response()->json(null, 204);
     }
 }
