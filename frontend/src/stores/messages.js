@@ -2,6 +2,15 @@ import { defineStore } from 'pinia'
 import { api } from '../lib/api'
 import { useFoldersStore, STARRED_ID } from './folders'
 
+/**
+ * The sentinel id for the virtual "Search" view — like `STARRED_ID`, not a
+ * real folder, just a marker so per-message logic that reads
+ * `message.folder_id ?? props.folderId` (move targets, the Sent/Drafts
+ * "به:" identity, etc.) falls back correctly to each result's own real
+ * folder instead of this sentinel.
+ */
+export const SEARCH_ID = 'search'
+
 export const useMessagesStore = defineStore('messages', {
   state: () => ({
     items: [],
@@ -11,6 +20,9 @@ export const useMessagesStore = defineStore('messages', {
     syncing: false,
     listError: null,
     syncError: null,
+
+    searchQuery: '',
+    searchAccountId: null,
 
     selected: null,
     detailLoading: false,
@@ -54,6 +66,29 @@ export const useMessagesStore = defineStore('messages', {
 
       try {
         const data = await api.get(`/email-accounts/${accountId}/starred-messages?page=${page}`)
+        this.items = data.data
+        this.meta = data.meta
+      } catch (error) {
+        this.listError = error
+      } finally {
+        this.listLoading = false
+      }
+    },
+
+    /**
+     * Free-text search across every folder in the account — local-DB only,
+     * same category as `fetchStarred()`. Matches subject, sender,
+     * recipients, and the already-stored plain-text body.
+     */
+    async search(accountId, query, page = 1) {
+      this.folderId = SEARCH_ID
+      this.searchQuery = query
+      this.searchAccountId = accountId
+      this.listLoading = true
+      this.listError = null
+
+      try {
+        const data = await api.get(`/email-accounts/${accountId}/search-messages?q=${encodeURIComponent(query)}&page=${page}`)
         this.items = data.data
         this.meta = data.meta
       } catch (error) {
@@ -227,7 +262,7 @@ export const useMessagesStore = defineStore('messages', {
       const sourceFolderId = target?.folder_id ?? this.folderId
       const previousItems = this.items
       const previousSelected = this.selected
-      const removeFromList = this.folderId !== STARRED_ID
+      const removeFromList = this.folderId !== STARRED_ID && this.folderId !== SEARCH_ID
 
       const adjustCounts = (sign) => {
         if (!wasUnread) return
@@ -299,6 +334,8 @@ export const useMessagesStore = defineStore('messages', {
       this.meta = null
       this.folderId = null
       this.selected = null
+      this.searchQuery = ''
+      this.searchAccountId = null
     },
   },
 })

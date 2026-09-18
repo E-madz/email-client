@@ -9,6 +9,7 @@ use App\Exceptions\Mail\ImapConnectionException;
 use App\Http\Controllers\Concerns\HandlesImapMailExceptions;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Messages\MoveMessageRequest;
+use App\Http\Requests\Messages\SearchMessagesRequest;
 use App\Http\Requests\Messages\UpdateMessageFlagsRequest;
 use App\Http\Resources\MessageDetailResource;
 use App\Http\Resources\MessageResource;
@@ -61,6 +62,40 @@ class MessageController extends Controller
         $messages = Message::query()
             ->whereHas('folder', fn ($query) => $query->where('email_account_id', $emailAccount->id))
             ->where('is_flagged', true)
+            ->orderByDesc('date')
+            ->paginate(20);
+
+        return MessageResource::collection($messages);
+    }
+
+    /**
+     * Free-text search across every one of an account's folders — local-DB
+     * only, same category as `starred()` (no live IMAP call, since every
+     * field searched here is already synced locally per message). Matches a
+     * substring, case-insensitively, against subject, sender, recipients
+     * (To/CC — relevant for finding a message you sent), and the plain-text
+     * body already stored for the message-list preview (§3.3). Deliberately
+     * a simple `LIKE` rather than a `FULLTEXT`/external search engine — this
+     * MVP's message volume doesn't need it, and `LIKE` behaves identically
+     * across the SQLite used in dev/tests and the MySQL used in production
+     * (§2), unlike a MySQL-specific FULLTEXT index.
+     */
+    public function search(SearchMessagesRequest $request, EmailAccount $emailAccount): AnonymousResourceCollection
+    {
+        abort_unless($emailAccount->user_id === $request->user()->id, 403);
+
+        $term = '%'.$request->validated('q').'%';
+
+        $messages = Message::query()
+            ->whereHas('folder', fn ($query) => $query->where('email_account_id', $emailAccount->id))
+            ->where(function ($query) use ($term) {
+                $query->where('subject', 'like', $term)
+                    ->orWhere('from_name', 'like', $term)
+                    ->orWhere('from_email', 'like', $term)
+                    ->orWhere('body_text', 'like', $term)
+                    ->orWhere('to', 'like', $term)
+                    ->orWhere('cc', 'like', $term);
+            })
             ->orderByDesc('date')
             ->paginate(20);
 

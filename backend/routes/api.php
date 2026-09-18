@@ -46,5 +46,6 @@ Route::middleware('auth:sanctum')->group(function () {
     // Local-DB-only, no live IMAP/SMTP call — not subject to the mail-server-facing throttle above.
     Route::get('/folders/{folder}/messages', [MessageController::class, 'index']);
     Route::get('/email-accounts/{emailAccount}/starred-messages', [MessageController::class, 'starred']);
+    Route::get('/email-accounts/{emailAccount}/search-messages', [MessageController::class, 'search']);
     Route::get('/attachments/{attachment}', [AttachmentController::class, 'download']);
 });

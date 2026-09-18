@@ -1,6 +1,6 @@
 <script setup>
-import { watch, onMounted, computed } from 'vue'
-import { useMessagesStore } from '../stores/messages'
+import { ref, watch, onMounted, computed } from 'vue'
+import { useMessagesStore, SEARCH_ID } from '../stores/messages'
 import { useFoldersStore, STARRED_ID } from '../stores/folders'
 import LoadingSpinner from './LoadingSpinner.vue'
 import ErrorBanner from './ErrorBanner.vue'
@@ -18,6 +18,33 @@ const folders = useFoldersStore()
 
 const isStarredView = computed(() => props.folderId === STARRED_ID)
 const isTrash = computed(() => folders.active?.type === 'trash')
+
+const searchTerm = ref('')
+const isSearchActive = computed(() => searchTerm.value.trim() !== '')
+// Both Starred and Search are cross-folder views — a message shown there can
+// belong to any real folder (including Trash), so per-message context (the
+// delete label, permanent-vs-move-to-trash behavior) must check that
+// message's *own* folder rather than the sidebar's currently active one.
+const isCrossFolderView = computed(() => isStarredView.value || isSearchActive.value)
+let searchDebounceTimer = null
+
+watch(searchTerm, (value) => {
+  clearTimeout(searchDebounceTimer)
+  const trimmed = value.trim()
+
+  if (!trimmed) {
+    loadList(1)
+    return
+  }
+
+  searchDebounceTimer = setTimeout(() => {
+    if (props.accountId) messages.search(props.accountId, trimmed, 1)
+  }, 300)
+})
+
+function clearSearch() {
+  searchTerm.value = ''
+}
 
 function folderTypeOf(folderId) {
   return folders.items.find((item) => item.id === folderId)?.type
@@ -51,6 +78,11 @@ function formatDate(iso) {
 }
 
 function loadList(page = 1) {
+  if (isSearchActive.value) {
+    if (props.accountId) messages.search(props.accountId, searchTerm.value.trim(), page)
+    return
+  }
+
   if (!props.folderId) {
     messages.reset()
     return
@@ -88,9 +120,10 @@ function toggleFlag(event, message) {
 function deleteMessage(event, message) {
   event.stopPropagation()
 
-  // In the Starred view a message can belong to any real folder — check its
-  // own folder's type rather than the (virtual) active folder.
-  const inTrash = isStarredView.value ? folderTypeOf(message.folder_id) === 'trash' : isTrash.value
+  // In a cross-folder view (Starred/Search) a message can belong to any
+  // real folder — check its own folder's type rather than the (virtual)
+  // active folder.
+  const inTrash = isCrossFolderView.value ? folderTypeOf(message.folder_id) === 'trash' : isTrash.value
 
   if (inTrash && !confirm('این پیام برای همیشه حذف شود؟ این کار قابل بازگشت نیست.')) {
     return
@@ -157,7 +190,7 @@ function emptyTrash() {
 }
 
 function deleteLabel(message) {
-  const inTrash = isStarredView.value ? folderTypeOf(message.folder_id) === 'trash' : isTrash.value
+  const inTrash = isCrossFolderView.value ? folderTypeOf(message.folder_id) === 'trash' : isTrash.value
   return inTrash ? 'حذف برای همیشه' : 'انتقال به سطل زباله'
 }
 
@@ -167,10 +200,24 @@ function goToPage(page) {
   }
 }
 
-watch(() => props.folderId, () => loadList(1))
+watch(
+  () => props.folderId,
+  () => {
+    // Selecting a folder from the sidebar exits search mode, same as every
+    // mainstream webmail client. Clearing searchTerm alone already triggers
+    // its own watcher's reload, so only call loadList directly when there
+    // was no active search to avoid firing the request twice.
+    if (searchTerm.value) {
+      searchTerm.value = ''
+    } else {
+      loadList(1)
+    }
+  },
+)
 watch(
   () => props.accountId,
   () => {
+    searchTerm.value = ''
     if (isStarredView.value) loadList(1)
   },
 )
@@ -183,7 +230,7 @@ onMounted(() => loadList(1))
       <h2 class="text-sm font-semibold text-gray-800">پیام‌ها</h2>
       <div class="flex items-center gap-2">
         <button
-          v-if="isTrash && messages.items.length"
+          v-if="isTrash && !isSearchActive && messages.items.length"
           type="button"
           :disabled="messages.emptyingTrash"
           class="flex items-center gap-1.5 rounded-lg border border-red-200 px-2.5 py-1.5 text-xs font-medium text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
@@ -192,7 +239,7 @@ onMounted(() => loadList(1))
           {{ messages.emptyingTrash ? 'در حال خالی کردن…' : 'خالی کردن سطل زباله' }}
         </button>
         <button
-          v-if="!isStarredView"
+          v-if="!isStarredView && !isSearchActive"
           type="button"
           :disabled="!folderId || messages.syncing"
           class="flex items-center gap-1.5 rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs font-medium text-gray-600 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
@@ -214,6 +261,41 @@ onMounted(() => loadList(1))
             />
           </svg>
           {{ messages.syncing ? 'در حال دریافت…' : 'دریافت ایمیل جدید' }}
+        </button>
+      </div>
+    </div>
+
+    <div class="border-b border-gray-200 px-4 py-2.5">
+      <div class="relative">
+        <svg
+          class="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.75"
+          aria-hidden="true"
+        >
+          <path stroke-linecap="round" stroke-linejoin="round" d="m21 21-4.35-4.35M18 10.5a7.5 7.5 0 1 1-15 0 7.5 7.5 0 0 1 15 0Z" />
+        </svg>
+        <input
+          v-model="searchTerm"
+          type="text"
+          placeholder="جستجو در موضوع، فرستنده، گیرنده و متن پیام…"
+          :disabled="!accountId"
+          class="w-full rounded-lg border border-gray-200 py-1.5 pl-8 pr-8 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:cursor-not-allowed disabled:bg-gray-50"
+        />
+        <button
+          v-if="searchTerm"
+          type="button"
+          class="absolute left-2 top-1/2 -translate-y-1/2 rounded-full p-0.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+          aria-label="پاک کردن جستجو"
+          @click="clearSearch"
+        >
+          <svg class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+            <path
+              d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z"
+            />
+          </svg>
         </button>
       </div>
     </div>
@@ -252,7 +334,12 @@ onMounted(() => loadList(1))
         @retry="() => loadList(1)"
       />
       <EmptyState
-        v-else-if="!folderId"
+        v-else-if="isSearchActive && !messages.items.length"
+        title="نتیجه‌ای یافت نشد"
+        description="عبارت دیگری را امتحان کنید."
+      />
+      <EmptyState
+        v-else-if="!isSearchActive && !folderId"
         title="یک پوشه انتخاب کنید"
         description="برای مشاهده‌ی پیام‌ها، از منوی سمت راست یک پوشه انتخاب کنید."
       />
