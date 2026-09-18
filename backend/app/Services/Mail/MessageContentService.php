@@ -7,6 +7,7 @@ namespace App\Services\Mail;
 use App\Exceptions\Mail\ImapAuthenticationException;
 use App\Exceptions\Mail\ImapConnectionException;
 use App\Models\Message;
+use App\Models\MessageAttachment;
 
 final class MessageContentService
 {
@@ -78,5 +79,59 @@ final class MessageContentService
         }
 
         return $message;
+    }
+
+    /**
+     * Fetch a received message's attachment content live from IMAP by UID +
+     * part number, per the original Phase 2 design (CLAUDE.md §3.3: "a real
+     * download fetches the part live from IMAP ... when actually requested",
+     * never persisted). Not cached — each download re-fetches, same as any
+     * other IMAP-backed read in this app; attachments are typically opened
+     * rarely enough that this is simpler than adding a caching layer.
+     *
+     * @return array{content: string, mime_type: string}
+     *
+     * @throws ImapAuthenticationException when the stored credentials are no longer valid
+     * @throws ImapConnectionException when the server cannot be reached, the folder/message/attachment
+     *                                 no longer exists, or it reports an error
+     */
+    public function fetchAttachmentContent(MessageAttachment $attachment): array
+    {
+        $message = $attachment->message;
+        $folder = $message->folder;
+        $client = $this->connectionFactory->connectForAccount($folder->emailAccount);
+
+        try {
+            $imapFolder = $this->connectionFactory->guard(fn () => $client->getFolderByPath($folder->name));
+
+            if ($imapFolder === null) {
+                throw new ImapConnectionException("Folder \"{$folder->name}\" no longer exists on the mail server.");
+            }
+
+            $imapMessage = $this->connectionFactory->guard(
+                fn () => $imapFolder->query()->whereUid($message->uid)->leaveUnread()->get()->first(),
+            );
+
+            if ($imapMessage === null) {
+                throw new ImapConnectionException('The message no longer exists on the mail server.');
+            }
+
+            $imapAttachment = $this->connectionFactory->guard(
+                fn () => $imapMessage->getAttachments()->first(
+                    fn ($candidate) => (string) $candidate->getPartNumber() === (string) $attachment->part_number,
+                ),
+            );
+
+            if ($imapAttachment === null) {
+                throw new ImapConnectionException('The attachment no longer exists on the mail server.');
+            }
+
+            return [
+                'content' => $imapAttachment->getContent(),
+                'mime_type' => $imapAttachment->getContentType() ?? $attachment->mime_type,
+            ];
+        } finally {
+            $this->connectionFactory->disconnect($client);
+        }
     }
 }

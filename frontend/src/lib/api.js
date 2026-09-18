@@ -87,6 +87,43 @@ async function request(path, { method = 'GET', body, signal, isFormData = false 
   return data
 }
 
+/**
+ * Downloads use their own path — the response body is a file, not JSON, so
+ * it can't go through request()'s JSON parsing. Auth still needs the same
+ * Bearer header a plain <a href="..."> could never attach.
+ */
+async function downloadBlob(path) {
+  const headers = {}
+  const token = getToken()
+  if (token) {
+    headers.Authorization = `Bearer ${token}`
+  }
+
+  let response
+  try {
+    response = await fetch(`${BASE_URL}${path}`, { headers })
+  } catch {
+    throw new ApiError(0, 'اتصال به سرور برقرار نشد. اتصال اینترنت یا در دسترس بودن سرور را بررسی کنید.')
+  }
+
+  if (!response.ok) {
+    if (response.status === 401 && unauthorizedHandler) {
+      unauthorizedHandler()
+    }
+
+    let message = 'دانلود پیوست با خطا مواجه شد.'
+    try {
+      const data = await response.json()
+      message = data?.message ?? message
+    } catch {
+      // Response wasn't JSON (e.g. a plain-text abort message) — keep the default.
+    }
+    throw new ApiError(response.status, message)
+  }
+
+  return response.blob()
+}
+
 export const api = {
   get: (path, options) => request(path, { ...options, method: 'GET' }),
   post: (path, body, options) => request(path, { ...options, method: 'POST', body }),
@@ -94,4 +131,5 @@ export const api = {
   patch: (path, body, options) => request(path, { ...options, method: 'PATCH', body }),
   delete: (path, options) => request(path, { ...options, method: 'DELETE' }),
   postForm: (path, formData, options) => request(path, { ...options, method: 'POST', body: formData, isFormData: true }),
+  downloadBlob,
 }

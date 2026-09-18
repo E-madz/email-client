@@ -1,11 +1,35 @@
 <script setup>
+import { ref } from 'vue'
 import { useMessagesStore } from '../stores/messages'
+import { api, ApiError } from '../lib/api'
 import LoadingSpinner from './LoadingSpinner.vue'
 import ErrorBanner from './ErrorBanner.vue'
 import EmptyState from './EmptyState.vue'
 import SafeHtmlFrame from './SafeHtmlFrame.vue'
 
 const messages = useMessagesStore()
+
+const downloadingId = ref(null)
+const downloadError = ref(null)
+
+async function downloadAttachment(attachment) {
+  downloadingId.value = attachment.id
+  downloadError.value = null
+
+  try {
+    const blob = await api.downloadBlob(`/attachments/${attachment.id}`)
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = attachment.filename
+    link.click()
+    URL.revokeObjectURL(url)
+  } catch (error) {
+    downloadError.value = error instanceof ApiError ? error.message : 'دانلود پیوست با خطا مواجه شد.'
+  } finally {
+    downloadingId.value = null
+  }
+}
 
 const dateFormatter = new Intl.DateTimeFormat('fa-IR', { dateStyle: 'full', timeStyle: 'short' })
 
@@ -121,21 +145,42 @@ function toggleFlag() {
         </div>
       </div>
 
-      <div v-if="messages.selected.attachments?.length" class="flex flex-wrap gap-2 border-b border-gray-100 px-6 py-3">
-        <span
-          v-for="attachment in messages.selected.attachments"
-          :key="attachment.id"
-          class="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-1 text-xs text-gray-600"
-        >
-          <svg class="h-3.5 w-3.5 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true">
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              d="M18.375 12.739 12 19.114a4.688 4.688 0 0 1-6.629-6.629l7.5-7.5a3.125 3.125 0 0 1 4.419 4.419l-7.5 7.5a1.563 1.563 0 0 1-2.212-2.212l6.75-6.75"
-            />
-          </svg>
-          {{ attachment.filename }}
-        </span>
+      <div v-if="messages.selected.attachments?.length" class="border-b border-gray-100 px-6 py-3">
+        <div class="flex flex-wrap gap-2">
+          <button
+            v-for="attachment in messages.selected.attachments"
+            :key="attachment.id"
+            type="button"
+            :disabled="downloadingId === attachment.id"
+            class="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-1 text-xs text-gray-600 hover:bg-gray-100 disabled:cursor-wait disabled:opacity-60"
+            @click="downloadAttachment(attachment)"
+          >
+            <svg
+              v-if="downloadingId !== attachment.id"
+              class="h-3.5 w-3.5 text-gray-400"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.75"
+              aria-hidden="true"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3"
+              />
+            </svg>
+            <svg v-else class="h-3.5 w-3.5 animate-spin text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true">
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99"
+              />
+            </svg>
+            <span dir="ltr">{{ attachment.filename }}</span>
+          </button>
+        </div>
+        <p v-if="downloadError" class="mt-1.5 text-xs text-red-600">{{ downloadError }}</p>
       </div>
 
       <div class="thin-scrollbar flex-1 overflow-y-auto">
