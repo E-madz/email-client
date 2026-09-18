@@ -79,6 +79,44 @@ class FolderControllerTest extends TestCase
         $this->assertSame('sent', $names['INBOX.Sent']['type']);
     }
 
+    public function test_syncing_folders_keeps_one_canonical_folder_per_type_and_demotes_the_rest_to_custom(): void
+    {
+        // Real-world case found on a live IranServer account: it has both a
+        // top-level "Junk" folder carrying the SPECIAL-USE \Junk attribute
+        // AND a separate "INBOX.spam" child folder matched only by name.
+        // Confirmed against the same account's Roundcube: the one actually
+        // treated as "the" spam folder there is the INBOX child, and "Junk"
+        // shows up separately under its own raw name — not as a second
+        // "هرزنامه". SPECIAL-USE alone isn't a reliable tie-breaker here.
+        $this->mockRawFolderList([
+            'Junk' => ['delimiter' => '.', 'flags' => ['\HasNoChildren', '\UnMarked', '\Junk']],
+            'Trash' => ['delimiter' => '.', 'flags' => ['\HasNoChildren', '\UnMarked', '\Trash']],
+            'Sent' => ['delimiter' => '.', 'flags' => ['\HasNoChildren', '\UnMarked', '\Sent']],
+            'Drafts' => ['delimiter' => '.', 'flags' => ['\HasNoChildren', '\UnMarked', '\Drafts']],
+            'INBOX.spam' => ['delimiter' => '.', 'flags' => ['\HasNoChildren', '\UnMarked']],
+            'INBOX' => ['delimiter' => '.', 'flags' => ['\HasChildren']],
+        ]);
+
+        $user = User::factory()->create();
+        $account = EmailAccount::factory()->for($user)->create();
+
+        $response = $this->actingAs($user, 'sanctum')->getJson("/api/email-accounts/{$account->id}/folders");
+
+        $response->assertOk();
+        $names = collect($response->json())->keyBy('name');
+
+        $this->assertSame('spam', $names['INBOX.spam']['type']);
+        $this->assertSame('هرزنامه', $names['INBOX.spam']['display_name']);
+        $this->assertSame('custom', $names['Junk']['type']);
+        $this->assertSame('Junk', $names['Junk']['display_name']);
+
+        // Types with only one candidate are unaffected by the dedup pass.
+        $this->assertSame('trash', $names['Trash']['type']);
+        $this->assertSame('sent', $names['Sent']['type']);
+        $this->assertSame('drafts', $names['Drafts']['type']);
+        $this->assertSame('inbox', $names['INBOX']['type']);
+    }
+
     public function test_syncing_folders_twice_upserts_rather_than_duplicating(): void
     {
         $this->mockRawFolderList([
