@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useAuthStore } from '../stores/auth'
 import { useAccountsStore } from '../stores/accounts'
+import { useFoldersStore } from '../stores/folders'
 import { useMessagesStore } from '../stores/messages'
 import { useComposeStore } from '../stores/compose'
 import AccountSwitcher from '../components/AccountSwitcher.vue'
@@ -13,6 +14,7 @@ import ComposeModal from '../components/ComposeModal.vue'
 
 const auth = useAuthStore()
 const accounts = useAccountsStore()
+const folders = useFoldersStore()
 const messages = useMessagesStore()
 const compose = useComposeStore()
 
@@ -24,6 +26,7 @@ onMounted(() => accounts.fetch())
 
 function handleAccountChange() {
   activeFolderId.value = null
+  folders.reset()
   messages.reset()
 }
 
@@ -91,7 +94,7 @@ async function handleLogout() {
       </aside>
 
       <section class="w-96 shrink-0 border-l border-gray-200 bg-white">
-        <MessageList :folder-id="activeFolderId" @select="openMessage" />
+        <MessageList :folder-id="activeFolderId" :account-id="activeAccountId" @select="openMessage" />
       </section>
 
       <section class="min-w-0 flex-1 bg-white">

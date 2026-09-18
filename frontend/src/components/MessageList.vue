@@ -1,13 +1,14 @@
 <script setup>
 import { watch, onMounted, computed } from 'vue'
 import { useMessagesStore } from '../stores/messages'
-import { useFoldersStore } from '../stores/folders'
+import { useFoldersStore, STARRED_ID } from '../stores/folders'
 import LoadingSpinner from './LoadingSpinner.vue'
 import ErrorBanner from './ErrorBanner.vue'
 import EmptyState from './EmptyState.vue'
 
 const props = defineProps({
-  folderId: { type: Number, default: null },
+  folderId: { type: [Number, String], default: null },
+  accountId: { type: Number, default: null },
 })
 
 const emit = defineEmits(['select'])
@@ -15,7 +16,12 @@ const emit = defineEmits(['select'])
 const messages = useMessagesStore()
 const folders = useFoldersStore()
 
+const isStarredView = computed(() => props.folderId === STARRED_ID)
 const isTrash = computed(() => folders.active?.type === 'trash')
+
+function folderTypeOf(folderId) {
+  return folders.items.find((item) => item.id === folderId)?.type
+}
 
 const dateFormatter = new Intl.DateTimeFormat('fa-IR', { dateStyle: 'short', timeStyle: 'short' })
 function formatDate(iso) {
@@ -25,6 +31,11 @@ function formatDate(iso) {
 function loadList(page = 1) {
   if (!props.folderId) {
     messages.reset()
+    return
+  }
+
+  if (isStarredView.value) {
+    messages.fetchStarred(props.accountId, page)
     return
   }
 
@@ -55,7 +66,11 @@ function toggleFlag(event, message) {
 function deleteMessage(event, message) {
   event.stopPropagation()
 
-  if (isTrash.value && !confirm('این پیام برای همیشه حذف شود؟ این کار قابل بازگشت نیست.')) {
+  // In the Starred view a message can belong to any real folder — check its
+  // own folder's type rather than the (virtual) active folder.
+  const inTrash = isStarredView.value ? folderTypeOf(message.folder_id) === 'trash' : isTrash.value
+
+  if (inTrash && !confirm('این پیام برای همیشه حذف شود؟ این کار قابل بازگشت نیست.')) {
     return
   }
 
@@ -69,6 +84,11 @@ function emptyTrash() {
   messages.emptyTrash(props.folderId)
 }
 
+function deleteLabel(message) {
+  const inTrash = isStarredView.value ? folderTypeOf(message.folder_id) === 'trash' : isTrash.value
+  return inTrash ? 'حذف برای همیشه' : 'انتقال به سطل زباله'
+}
+
 function goToPage(page) {
   if (page >= 1 && page <= (messages.meta?.last_page ?? 1)) {
     loadList(page)
@@ -76,6 +96,12 @@ function goToPage(page) {
 }
 
 watch(() => props.folderId, () => loadList(1))
+watch(
+  () => props.accountId,
+  () => {
+    if (isStarredView.value) loadList(1)
+  },
+)
 onMounted(() => loadList(1))
 </script>
 
@@ -94,6 +120,7 @@ onMounted(() => loadList(1))
           {{ messages.emptyingTrash ? 'در حال خالی کردن…' : 'خالی کردن سطل زباله' }}
         </button>
         <button
+          v-if="!isStarredView"
           type="button"
           :disabled="!folderId || messages.syncing"
           class="flex items-center gap-1.5 rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs font-medium text-gray-600 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
@@ -150,6 +177,11 @@ onMounted(() => loadList(1))
         v-else-if="!folderId"
         title="یک پوشه انتخاب کنید"
         description="برای مشاهده‌ی پیام‌ها، از منوی سمت راست یک پوشه انتخاب کنید."
+      />
+      <EmptyState
+        v-else-if="!messages.items.length && isStarredView"
+        title="پیام ستاره‌داری وجود ندارد"
+        description="پیام‌هایی که ستاره‌دار می‌کنید این‌جا نمایش داده می‌شوند."
       />
       <EmptyState
         v-else-if="!messages.items.length"
@@ -230,7 +262,7 @@ onMounted(() => loadList(1))
                   type="button"
                   :disabled="messages.deletingId === message.id"
                   class="rounded p-0.5 text-gray-300 hover:bg-gray-200 hover:text-red-500 disabled:cursor-wait"
-                  :aria-label="isTrash ? 'حذف برای همیشه' : 'انتقال به سطل زباله'"
+                  :aria-label="deleteLabel(message)"
                   @click="deleteMessage($event, message)"
                 >
                   <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">

@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { api } from '../lib/api'
-import { useFoldersStore } from './folders'
+import { useFoldersStore, STARRED_ID } from './folders'
 
 export const useMessagesStore = defineStore('messages', {
   state: () => ({
@@ -31,6 +31,27 @@ export const useMessagesStore = defineStore('messages', {
 
       try {
         const data = await api.get(`/folders/${folderId}/messages?page=${page}`)
+        this.items = data.data
+        this.meta = data.meta
+      } catch (error) {
+        this.listError = error
+      } finally {
+        this.listLoading = false
+      }
+    },
+
+    /**
+     * The virtual "Starred" view (CLAUDE.md §8) — flagged messages across
+     * every folder in the account, answered from the local DB only (no live
+     * IMAP call, `is_flagged` is already kept in sync per message).
+     */
+    async fetchStarred(accountId, page = 1) {
+      this.folderId = STARRED_ID
+      this.listLoading = true
+      this.listError = null
+
+      try {
+        const data = await api.get(`/email-accounts/${accountId}/starred-messages?page=${page}`)
         this.items = data.data
         this.meta = data.meta
       } catch (error) {
@@ -84,24 +105,58 @@ export const useMessagesStore = defineStore('messages', {
       this.detailError = null
     },
 
+    /**
+     * Optimistic — a real IMAP round-trip is a couple of seconds, and a
+     * star/read toggle needs to feel instant. Applied immediately, rolled
+     * back only if the server call actually fails. In the Starred view,
+     * unstarring a message also removes it from the (filtered) list right
+     * away, since it would no longer belong there.
+     */
     async setFlags(messageId, flags) {
       this.flagUpdatingId = messageId
 
+      const folders = useFoldersStore()
+      const target = this.items.find((item) => item.id === messageId)
+      const previousItem = target ? { ...target } : null
+      const previousSelected = this.selected?.id === messageId ? { ...this.selected } : null
+      const folderId = target?.folder_id ?? this.folderId
+      const removeIfUnstarred = this.folderId === STARRED_ID && flags.is_flagged === false
+
+      const applyLocally = (values) => {
+        if (removeIfUnstarred) {
+          this.items = this.items.filter((item) => item.id !== messageId)
+        } else {
+          this.items = this.items.map((item) => (item.id === messageId ? { ...item, ...values } : item))
+        }
+        if (this.selected?.id === messageId) {
+          this.selected = { ...this.selected, ...values }
+        }
+      }
+
+      applyLocally(flags)
+      if ('is_read' in flags && previousItem && previousItem.is_read !== flags.is_read) {
+        folders.adjustUnreadCount(folderId, flags.is_read ? -1 : 1)
+      }
+
       try {
         const updated = await api.patch(`/messages/${messageId}/flags`, flags)
-
-        const wasRead = this.items.find((item) => item.id === messageId)?.is_read
-        this.items = this.items.map((item) => (item.id === messageId ? { ...item, ...updated } : item))
-
-        if (this.selected?.id === messageId) {
-          this.selected = { ...this.selected, ...updated }
+        if (!removeIfUnstarred) {
+          applyLocally(updated)
         }
-
-        if ('is_read' in flags && wasRead !== undefined && wasRead !== updated.is_read) {
-          useFoldersStore().adjustUnreadCount(this.folderId, updated.is_read ? -1 : 1)
-        }
-
         return updated
+      } catch (error) {
+        if (previousItem) {
+          this.items = removeIfUnstarred
+            ? [...this.items, previousItem].sort((a, b) => new Date(b.date) - new Date(a.date))
+            : this.items.map((item) => (item.id === messageId ? previousItem : item))
+        }
+        if (previousSelected) {
+          this.selected = previousSelected
+        }
+        if ('is_read' in flags && previousItem && previousItem.is_read !== flags.is_read) {
+          folders.adjustUnreadCount(folderId, flags.is_read ? 1 : -1)
+        }
+        throw error
       } finally {
         this.flagUpdatingId = null
       }
@@ -110,7 +165,7 @@ export const useMessagesStore = defineStore('messages', {
     /**
      * Context-aware, same as the backend endpoint it calls: from anywhere
      * except Trash this moves the message to Trash (recoverable); from
-     * inside Trash it's permanent.
+     * inside Trash it's permanent. Optimistic, same reasoning as setFlags.
      */
     async deleteMessage(messageId) {
       this.deletingId = messageId
@@ -119,27 +174,33 @@ export const useMessagesStore = defineStore('messages', {
       const folders = useFoldersStore()
       const target = this.items.find((item) => item.id === messageId)
       const wasUnread = target ? !target.is_read : false
-      const wasInTrash = folders.active?.type === 'trash'
+      const sourceFolderId = target?.folder_id ?? this.folderId
+      const sourceFolder = folders.items.find((folder) => folder.id === sourceFolderId)
+      const wasInTrash = sourceFolder?.type === 'trash'
+      const previousItems = this.items
+      const previousSelected = this.selected
+
+      const adjustCounts = (sign) => {
+        if (!wasUnread || !sourceFolderId) return
+        folders.adjustUnreadCount(sourceFolderId, sign * -1)
+        if (!wasInTrash) {
+          const trash = folders.items.find((folder) => folder.type === 'trash')
+          if (trash) folders.adjustUnreadCount(trash.id, sign * 1)
+        }
+      }
+
+      this.items = this.items.filter((item) => item.id !== messageId)
+      if (this.selected?.id === messageId) {
+        this.closeMessage()
+      }
+      adjustCounts(1)
 
       try {
         await api.delete(`/messages/${messageId}`)
-
-        this.items = this.items.filter((item) => item.id !== messageId)
-        if (this.selected?.id === messageId) {
-          this.closeMessage()
-        }
-
-        if (wasUnread) {
-          folders.adjustUnreadCount(this.folderId, -1)
-
-          if (!wasInTrash) {
-            const trash = folders.items.find((folder) => folder.type === 'trash')
-            if (trash) {
-              folders.adjustUnreadCount(trash.id, 1)
-            }
-          }
-        }
       } catch (error) {
+        this.items = previousItems
+        this.selected = previousSelected
+        adjustCounts(-1)
         this.deleteError = error
         throw error
       } finally {

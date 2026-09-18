@@ -26,6 +26,7 @@ class MessageResource extends JsonResource
     {
         return [
             'id' => $this->id,
+            'folder_id' => $this->folder_id,
             'uid' => $this->uid,
             'subject' => $this->subject,
             'from' => [

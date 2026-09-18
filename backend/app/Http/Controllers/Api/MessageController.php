@@ -11,6 +11,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Messages\UpdateMessageFlagsRequest;
 use App\Http\Resources\MessageDetailResource;
 use App\Http\Resources\MessageResource;
+use App\Models\EmailAccount;
 use App\Models\Folder;
 use App\Models\Message;
 use App\Services\Mail\MessageContentService;
@@ -40,6 +41,25 @@ class MessageController extends Controller
         abort_unless($folder->emailAccount->user_id === $request->user()->id, 403);
 
         $messages = $folder->messages()->orderByDesc('date')->paginate(20);
+
+        return MessageResource::collection($messages);
+    }
+
+    /**
+     * Starred messages across every one of an account's folders (a virtual
+     * "Starred" view, not a real IMAP folder — `is_flagged` is already
+     * synced per message, so this is a local-DB-only query, no live IMAP
+     * call needed).
+     */
+    public function starred(Request $request, EmailAccount $emailAccount): AnonymousResourceCollection
+    {
+        abort_unless($emailAccount->user_id === $request->user()->id, 403);
+
+        $messages = Message::query()
+            ->whereHas('folder', fn ($query) => $query->where('email_account_id', $emailAccount->id))
+            ->where('is_flagged', true)
+            ->orderByDesc('date')
+            ->paginate(20);
 
         return MessageResource::collection($messages);
     }

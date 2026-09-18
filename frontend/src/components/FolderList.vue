@@ -1,6 +1,6 @@
 <script setup>
 import { watch, onMounted, computed } from 'vue'
-import { useFoldersStore } from '../stores/folders'
+import { useFoldersStore, STARRED_ID } from '../stores/folders'
 import LoadingSpinner from './LoadingSpinner.vue'
 import ErrorBanner from './ErrorBanner.vue'
 import FolderTreeItem from './FolderTreeItem.vue'
@@ -24,6 +24,7 @@ const FOLDER_ICONS = {
   archive:
     'M20.25 7.5 18.75 6H5.25L3.75 7.5m16.5 0v10.5A1.5 1.5 0 0 1 18.75 19.5H5.25a1.5 1.5 0 0 1-1.5-1.5V7.5m16.5 0h-16.5m6.75 3h3',
   custom: 'M3.75 9.75h16.5M3.75 9.75V19.5a1.5 1.5 0 0 0 1.5 1.5h13.5a1.5 1.5 0 0 0 1.5-1.5V9.75M3.75 9.75l1.5-5.25h13.5l1.5 5.25',
+  starred: 'M11.48 3.499 13.702 8l4.966.723-3.594 3.503.848 4.946L11.48 14.75l-4.442 2.421.848-4.946L4.29 8.722l4.966-.723 2.223-4.5Z',
 }
 
 /**
@@ -117,6 +118,20 @@ onMounted(loadFolders)
         </svg>
       </button>
     </div>
+
+    <!--
+      Starred is a virtual, cross-folder view (CLAUDE.md §8) — not a real
+      synced IMAP folder, so it's shown independently of the live folder
+      sync's loading/error state below.
+    -->
+    <ul v-if="accountId" class="mb-1 space-y-0.5">
+      <FolderTreeItem
+        :folder="{ id: STARRED_ID, type: 'starred', display_name: 'Starred', unread_count: 0, children: [] }"
+        :active-id="folders.activeId"
+        :icons="FOLDER_ICONS"
+        @select="selectFolder"
+      />
+    </ul>
 
     <LoadingSpinner
       v-if="accountId && folders.loadingAccountId === accountId && !folders.items.length"
