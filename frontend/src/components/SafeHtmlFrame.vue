@@ -36,10 +36,28 @@ const srcdoc = computed(() => `<!doctype html>
   </head>
   <body dir="auto">${props.html || '<p style="color:#9ca3af">این پیام بدون محتوا است.</p>'}</body>
   <script>
+    // dir="auto" on <html>/<body> alone only looks at the FIRST strong-
+    // direction character in the whole document to pick one direction for
+    // everything — real-world mixed-language emails (e.g. an English
+    // notification template with a Persian paragraph further down) start
+    // with Latin text, so the whole body (including the Persian part)
+    // inherits LTR. Setting dir="auto" on each block element individually
+    // makes every paragraph/cell/list item judge its own direction from its
+    // own first strong character instead, without touching inline elements
+    // (which would break natural bidi flow within a single sentence).
+    function autoDirBlocks() {
+      var BLOCK_SELECTOR = 'p, div, li, td, th, blockquote, h1, h2, h3, h4, h5, h6';
+      document.querySelectorAll(BLOCK_SELECTOR).forEach(function (el) {
+        if (!el.hasAttribute('dir')) {
+          el.setAttribute('dir', 'auto');
+        }
+      });
+    }
     function reportHeight() {
       var h = document.body.scrollHeight;
       parent.postMessage({ type: 'email-frame-resize', frameId: '${frameId}', height: h }, '*');
     }
+    autoDirBlocks();
     window.addEventListener('load', reportHeight);
     new ResizeObserver(reportHeight).observe(document.body);
   <\/script>
