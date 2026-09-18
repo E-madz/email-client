@@ -124,7 +124,7 @@ function removeChip(index) {
 <template>
   <div>
     <div
-      class="flex min-h-[42px] flex-wrap items-center gap-1.5 rounded-lg border border-gray-200 px-2 py-1.5 focus-within:border-indigo-500 focus-within:ring-1 focus-within:ring-indigo-500"
+      class="flex min-h-[44px] flex-wrap items-center gap-1.5 rounded-xl border border-gray-200 bg-gray-50/60 px-2.5 py-1.5 transition focus-within:border-indigo-400 focus-within:bg-white focus-within:ring-4 focus-within:ring-indigo-500/10"
     >
       <span
         v-for="(email, index) in modelValue"
@@ -152,7 +152,7 @@ function removeChip(index) {
         type="text"
         dir="ltr"
         :placeholder="modelValue.length ? '' : placeholder"
-        class="min-w-[120px] flex-1 border-none p-0.5 text-sm focus:outline-none focus:ring-0"
+        class="min-w-[120px] flex-1 border-none bg-transparent p-0.5 text-sm focus:outline-none focus:ring-0"
         @keydown="handleKeydown"
         @paste="handlePaste"
         @blur="handleBlur"

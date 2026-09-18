@@ -7,10 +7,13 @@ defineEmits(['close'])
 </script>
 
 <template>
-  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" @click.self="$emit('close')">
-    <div class="w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl">
+  <div
+    class="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/40 p-4 backdrop-blur-[2px]"
+    @click.self="$emit('close')"
+  >
+    <div class="w-full max-w-sm rounded-3xl bg-white p-6 shadow-2xl shadow-black/20">
       <div class="mb-4 flex items-center justify-between">
-        <h2 class="text-base font-bold text-gray-900">{{ title }}</h2>
+        <h2 class="text-[15px] font-bold tracking-tight text-gray-900">{{ title }}</h2>
         <button
           type="button"
           class="rounded-full p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"

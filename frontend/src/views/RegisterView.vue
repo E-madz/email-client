@@ -36,67 +36,68 @@ async function handleSubmit() {
 </script>
 
 <template>
-  <div class="flex min-h-screen items-center justify-center bg-gray-50 px-4 py-10">
-    <div class="w-full max-w-sm rounded-2xl bg-white p-8 shadow-lg shadow-gray-200/60">
+  <div class="flex min-h-screen items-center justify-center px-4 py-10"
+    style="background: radial-gradient(circle at 15% 15%, #eef2ff 0%, transparent 45%), radial-gradient(circle at 85% 85%, #f5f3ff 0%, transparent 45%), #f8fafc">
+    <div class="w-full max-w-sm rounded-3xl border border-gray-100 bg-white p-8 shadow-xl shadow-indigo-950/5">
       <div class="mb-8 text-center">
-        <h1 class="text-xl font-bold text-gray-900">ساخت حساب کاربری</h1>
-        <p class="mt-1 text-sm text-gray-500">برای شروع، اطلاعات زیر را وارد کنید</p>
+        <h1 class="text-2xl font-bold tracking-tight text-gray-900">ساخت حساب کاربری</h1>
+        <p class="mt-1.5 text-sm text-gray-500">برای شروع، اطلاعات زیر را وارد کنید</p>
       </div>
 
       <form class="space-y-4" @submit.prevent="handleSubmit">
         <div>
-          <label for="name" class="mb-1 block text-sm font-medium text-gray-700">نام</label>
+          <label for="name" class="mb-1.5 block text-sm font-medium text-gray-700">نام</label>
           <input
             id="name"
             v-model="form.name"
             type="text"
             required
-            class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            class="w-full rounded-xl border border-gray-200 bg-gray-50/60 px-3.5 py-2.5 text-sm transition focus:border-indigo-400 focus:bg-white focus:outline-none focus:ring-4 focus:ring-indigo-500/10"
           />
           <p v-if="fieldErrors.name" class="mt-1 text-xs text-red-600">{{ fieldErrors.name[0] }}</p>
         </div>
 
         <div>
-          <label for="username" class="mb-1 block text-sm font-medium text-gray-700">نام کاربری</label>
+          <label for="username" class="mb-1.5 block text-sm font-medium text-gray-700">نام کاربری</label>
           <input
             id="username"
             v-model="form.username"
             type="text"
             autocomplete="username"
             required
-            class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            class="w-full rounded-xl border border-gray-200 bg-gray-50/60 px-3.5 py-2.5 text-sm transition focus:border-indigo-400 focus:bg-white focus:outline-none focus:ring-4 focus:ring-indigo-500/10"
           />
           <p v-if="fieldErrors.username" class="mt-1 text-xs text-red-600">{{ fieldErrors.username[0] }}</p>
         </div>
 
         <div>
-          <label for="email" class="mb-1 block text-sm font-medium text-gray-700">ایمیل</label>
+          <label for="email" class="mb-1.5 block text-sm font-medium text-gray-700">ایمیل</label>
           <input
             id="email"
             v-model="form.email"
             type="email"
             autocomplete="email"
             required
-            class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            class="w-full rounded-xl border border-gray-200 bg-gray-50/60 px-3.5 py-2.5 text-sm transition focus:border-indigo-400 focus:bg-white focus:outline-none focus:ring-4 focus:ring-indigo-500/10"
           />
           <p v-if="fieldErrors.email" class="mt-1 text-xs text-red-600">{{ fieldErrors.email[0] }}</p>
         </div>
 
         <div>
-          <label for="password" class="mb-1 block text-sm font-medium text-gray-700">رمز عبور</label>
+          <label for="password" class="mb-1.5 block text-sm font-medium text-gray-700">رمز عبور</label>
           <input
             id="password"
             v-model="form.password"
             type="password"
             autocomplete="new-password"
             required
-            class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            class="w-full rounded-xl border border-gray-200 bg-gray-50/60 px-3.5 py-2.5 text-sm transition focus:border-indigo-400 focus:bg-white focus:outline-none focus:ring-4 focus:ring-indigo-500/10"
           />
           <p v-if="fieldErrors.password" class="mt-1 text-xs text-red-600">{{ fieldErrors.password[0] }}</p>
         </div>
 
         <div>
-          <label for="password_confirmation" class="mb-1 block text-sm font-medium text-gray-700">
+          <label for="password_confirmation" class="mb-1.5 block text-sm font-medium text-gray-700">
             تکرار رمز عبور
           </label>
           <input
@@ -105,16 +106,16 @@ async function handleSubmit() {
             type="password"
             autocomplete="new-password"
             required
-            class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            class="w-full rounded-xl border border-gray-200 bg-gray-50/60 px-3.5 py-2.5 text-sm transition focus:border-indigo-400 focus:bg-white focus:outline-none focus:ring-4 focus:ring-indigo-500/10"
           />
         </div>
 
-        <p v-if="errorMessage" class="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{{ errorMessage }}</p>
+        <p v-if="errorMessage" class="rounded-xl bg-red-50 px-3.5 py-2.5 text-sm text-red-700">{{ errorMessage }}</p>
 
         <button
           type="submit"
           :disabled="auth.submitting"
-          class="flex w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+          class="brand-gradient flex w-full items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-500/25 transition hover:shadow-indigo-500/40 hover:brightness-110 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:brightness-100"
         >
           <span
             v-if="auth.submitting"
@@ -126,7 +127,7 @@ async function handleSubmit() {
 
       <p class="mt-6 text-center text-sm text-gray-500">
         قبلاً ثبت‌نام کرده‌اید؟
-        <RouterLink :to="{ name: 'login' }" class="font-medium text-indigo-600 hover:text-indigo-700">
+        <RouterLink :to="{ name: 'login' }" class="font-semibold text-indigo-600 hover:text-indigo-700">
           وارد شوید
         </RouterLink>
       </p>

@@ -67,10 +67,12 @@ function handleDrop(event) {
 <template>
   <li>
     <div
-      class="group flex items-center gap-1 rounded-lg transition"
+      class="group flex items-center gap-1 rounded-xl transition"
       :class="[
-        folder.id === activeId ? 'bg-indigo-50 font-medium text-indigo-700' : 'text-gray-700 hover:bg-gray-100',
-        isDragOver ? 'outline outline-2 outline-indigo-400' : '',
+        folder.id === activeId
+          ? 'bg-indigo-50 font-semibold text-indigo-700 ring-1 ring-indigo-100'
+          : 'text-gray-600 hover:bg-gray-50',
+        isDragOver ? 'bg-indigo-50 outline outline-2 outline-offset-1 outline-indigo-400' : '',
       ]"
       @dragover="handleDragOver"
       @dragleave="isDragOver = false"
@@ -89,7 +91,7 @@ function handleDrop(event) {
         <span class="flex-1 truncate text-left" dir="ltr">{{ folder.display_name }}</span>
         <span
           v-if="folder.unread_count > 0"
-          class="rounded-full bg-indigo-600 px-1.5 py-0.5 text-[10px] font-semibold text-white"
+          class="brand-gradient rounded-full px-1.5 py-0.5 text-[10px] font-bold text-white shadow-sm shadow-indigo-500/30"
         >
           {{ folder.unread_count }}
         </span>

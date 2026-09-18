@@ -51,12 +51,12 @@ const titles = {
 <template>
   <div
     v-if="compose.isOpen"
-    class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+    class="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/40 p-4 backdrop-blur-[2px]"
     @click.self="compose.close"
   >
-    <div class="flex max-h-[90vh] w-full max-w-xl flex-col rounded-2xl bg-white shadow-xl">
+    <div class="flex max-h-[90vh] w-full max-w-xl flex-col rounded-3xl bg-white shadow-2xl shadow-black/20">
       <div class="flex items-center justify-between border-b border-gray-100 px-5 py-4">
-        <h2 class="text-base font-bold text-gray-900">{{ titles[compose.mode] ?? titles.new }}</h2>
+        <h2 class="text-[15px] font-bold tracking-tight text-gray-900">{{ titles[compose.mode] ?? titles.new }}</h2>
         <button
           type="button"
           class="rounded-full p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
@@ -79,44 +79,44 @@ const titles = {
         />
 
         <label class="block">
-          <span class="mb-1 block text-xs font-medium text-gray-500">گیرنده</span>
+          <span class="mb-1.5 block text-xs font-semibold text-gray-500">گیرنده</span>
           <EmailTagInput v-model="compose.draft.to" placeholder="یک آدرس ایمیل بنویسید و Enter بزنید" />
         </label>
 
         <div class="grid grid-cols-2 gap-3">
           <label class="block">
-            <span class="mb-1 block text-xs font-medium text-gray-500">رونوشت (CC)</span>
+            <span class="mb-1.5 block text-xs font-semibold text-gray-500">رونوشت (CC)</span>
             <EmailTagInput v-model="compose.draft.cc" placeholder="یک آدرس ایمیل بنویسید و Enter بزنید" />
           </label>
           <label class="block">
-            <span class="mb-1 block text-xs font-medium text-gray-500">رونوشت مخفی (BCC)</span>
+            <span class="mb-1.5 block text-xs font-semibold text-gray-500">رونوشت مخفی (BCC)</span>
             <EmailTagInput v-model="compose.draft.bcc" placeholder="یک آدرس ایمیل بنویسید و Enter بزنید" />
           </label>
         </div>
 
         <label class="block">
-          <span class="mb-1 block text-xs font-medium text-gray-500">موضوع</span>
+          <span class="mb-1.5 block text-xs font-semibold text-gray-500">موضوع</span>
           <input
             v-model="compose.draft.subject"
             type="text"
             :required="compose.mode !== 'draft'"
-            class="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            class="w-full rounded-xl border border-gray-200 bg-gray-50/60 px-3.5 py-2.5 text-sm transition focus:border-indigo-400 focus:bg-white focus:outline-none focus:ring-4 focus:ring-indigo-500/10"
           />
         </label>
 
         <label class="block flex-1">
-          <span class="mb-1 block text-xs font-medium text-gray-500">متن پیام</span>
+          <span class="mb-1.5 block text-xs font-semibold text-gray-500">متن پیام</span>
           <textarea
             v-model="compose.draft.bodyText"
             :required="compose.mode !== 'draft'"
             rows="8"
-            class="w-full resize-none rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            class="w-full resize-none rounded-xl border border-gray-200 bg-gray-50/60 px-3.5 py-2.5 text-sm transition focus:border-indigo-400 focus:bg-white focus:outline-none focus:ring-4 focus:ring-indigo-500/10"
           />
         </label>
 
         <div>
           <label
-            class="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50"
+            class="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs font-medium text-gray-600 transition hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-700"
           >
             <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true">
               <path
@@ -140,7 +140,7 @@ const titles = {
                 <span class="text-gray-400">{{ formatSize(attachment.size_bytes) }}</span>
                 <button
                   type="button"
-                  class="rounded p-0.5 text-gray-400 hover:bg-gray-200 hover:text-gray-600"
+                  class="rounded-md p-1 text-gray-400 transition hover:bg-red-50 hover:text-red-500"
                   aria-label="حذف پیوست"
                   @click="compose.removeExistingAttachment(attachment.id)"
                 >
@@ -165,7 +165,7 @@ const titles = {
                 <span class="text-gray-400">{{ formatSize(file.size) }}</span>
                 <button
                   type="button"
-                  class="rounded p-0.5 text-gray-400 hover:bg-gray-200 hover:text-gray-600"
+                  class="rounded-md p-1 text-gray-400 transition hover:bg-red-50 hover:text-red-500"
                   aria-label="حذف پیوست"
                   @click="compose.removeAttachment(index)"
                 >
@@ -180,10 +180,10 @@ const titles = {
           </ul>
         </div>
 
-        <div class="mt-auto flex items-center justify-end gap-2 border-t border-gray-100 pt-3">
+        <div class="mt-auto flex items-center justify-end gap-2 border-t border-gray-100 pt-4">
           <button
             type="button"
-            class="rounded-lg px-3 py-1.5 text-sm font-medium text-gray-500 hover:bg-gray-100"
+            class="rounded-xl px-3.5 py-2 text-sm font-medium text-gray-500 transition hover:bg-gray-100"
             @click="compose.close"
           >
             انصراف
@@ -191,7 +191,7 @@ const titles = {
           <button
             type="button"
             :disabled="compose.savingDraft || compose.sending"
-            class="rounded-lg border border-gray-200 px-3 py-1.5 text-sm font-medium text-gray-600 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+            class="rounded-xl border border-gray-200 px-3.5 py-2 text-sm font-semibold text-gray-600 transition hover:border-gray-300 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
             @click="handleSaveDraft"
           >
             {{ compose.savingDraft ? 'در حال ذخیره…' : 'ذخیره پیش‌نویس' }}
@@ -199,7 +199,7 @@ const titles = {
           <button
             type="submit"
             :disabled="compose.sending || compose.savingDraft"
-            class="rounded-lg bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+            class="brand-gradient rounded-xl px-5 py-2 text-sm font-semibold text-white shadow-md shadow-indigo-500/25 transition hover:shadow-indigo-500/40 hover:brightness-110 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:brightness-100"
           >
             {{ compose.sending ? 'در حال ارسال…' : 'ارسال' }}
           </button>

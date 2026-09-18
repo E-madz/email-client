@@ -33,7 +33,7 @@ async function confirmDelete(id) {
       <h2 class="text-xs font-semibold uppercase tracking-wide text-gray-400">اکانت‌های ایمیل</h2>
       <button
         type="button"
-        class="rounded-full p-1 text-indigo-600 hover:bg-indigo-50"
+        class="rounded-full p-1 text-indigo-600 transition hover:bg-indigo-50 hover:text-indigo-700"
         aria-label="افزودن اکانت"
         @click="showAddModal = true"
       >
@@ -46,8 +46,12 @@ async function confirmDelete(id) {
     <ul v-if="accounts.items.length" class="space-y-1">
       <li v-for="account in accounts.items" :key="account.id">
         <div
-          class="group flex items-center gap-2 rounded-lg px-2 py-2 text-sm transition"
-          :class="account.id === accounts.activeId ? 'bg-indigo-50 text-indigo-700' : 'text-gray-700 hover:bg-gray-100'"
+          class="group flex items-center gap-2 rounded-xl px-2.5 py-2 text-sm font-medium transition"
+          :class="
+            account.id === accounts.activeId
+              ? 'bg-indigo-50 text-indigo-700 ring-1 ring-indigo-100'
+              : 'text-gray-600 hover:bg-gray-50'
+          "
         >
           <button type="button" class="flex min-w-0 flex-1 items-center gap-2 text-right" @click="select(account.id)">
             <span

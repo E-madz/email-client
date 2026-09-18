@@ -226,14 +226,14 @@ onMounted(() => loadList(1))
 
 <template>
   <div class="flex h-full flex-col">
-    <div class="flex items-center justify-between border-b border-gray-200 px-4 py-3">
-      <h2 class="text-sm font-semibold text-gray-800">پیام‌ها</h2>
+    <div class="flex items-center justify-between border-b border-gray-100 px-4 py-3.5">
+      <h2 class="text-[15px] font-bold tracking-tight text-gray-900">پیام‌ها</h2>
       <div class="flex items-center gap-2">
         <button
           v-if="isTrash && !isSearchActive && messages.items.length"
           type="button"
           :disabled="messages.emptyingTrash"
-          class="flex items-center gap-1.5 rounded-lg border border-red-200 px-2.5 py-1.5 text-xs font-medium text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+          class="flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50/50 px-2.5 py-1.5 text-xs font-medium text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
           @click="emptyTrash"
         >
           {{ messages.emptyingTrash ? 'در حال خالی کردن…' : 'خالی کردن سطل زباله' }}
@@ -242,7 +242,7 @@ onMounted(() => loadList(1))
           v-if="!isStarredView && !isSearchActive"
           type="button"
           :disabled="!folderId || messages.syncing"
-          class="flex items-center gap-1.5 rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs font-medium text-gray-600 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+          class="flex items-center gap-1.5 rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs font-medium text-gray-600 transition hover:border-gray-300 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
           @click="syncNow"
         >
           <svg
@@ -265,10 +265,10 @@ onMounted(() => loadList(1))
       </div>
     </div>
 
-    <div class="border-b border-gray-200 px-4 py-2.5">
+    <div class="border-b border-gray-100 px-4 py-2.5">
       <div class="relative">
         <svg
-          class="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400"
+          class="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400"
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"
@@ -282,7 +282,7 @@ onMounted(() => loadList(1))
           type="text"
           placeholder="جستجو در موضوع، فرستنده، گیرنده و متن پیام…"
           :disabled="!accountId"
-          class="w-full rounded-lg border border-gray-200 py-1.5 pl-8 pr-8 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:cursor-not-allowed disabled:bg-gray-50"
+          class="w-full rounded-xl border border-gray-200 bg-gray-50/60 py-2 pl-9 pr-9 text-sm transition focus:border-indigo-400 focus:bg-white focus:outline-none focus:ring-4 focus:ring-indigo-500/10 disabled:cursor-not-allowed disabled:bg-gray-50"
         />
         <button
           v-if="searchTerm"
@@ -355,21 +355,21 @@ onMounted(() => loadList(1))
       />
 
       <ul v-else class="divide-y divide-gray-100">
-        <li v-for="message in messages.items" :key="message.id">
+        <li v-for="message in messages.items" :key="message.id" class="relative">
+          <span
+            v-if="!message.is_read"
+            class="brand-gradient absolute inset-y-0 right-0 w-[3px]"
+            aria-hidden="true"
+          />
           <button
             type="button"
             :draggable="isMovable(message)"
-            class="flex w-full flex-col gap-1 px-4 py-3 text-right transition hover:bg-gray-50"
-            :class="{ 'bg-indigo-50/60': messages.selected?.id === message.id }"
+            class="flex w-full flex-col gap-1 px-4 py-3.5 text-right transition hover:bg-gray-50/80"
+            :class="{ 'bg-indigo-50/70': messages.selected?.id === message.id }"
             @click="emit('select', message.id)"
             @dragstart="isMovable(message) && handleDragStart($event, message)"
           >
             <div class="flex items-center gap-2">
-              <span
-                v-if="!message.is_read"
-                class="h-2 w-2 shrink-0 rounded-full bg-indigo-600"
-                aria-hidden="true"
-              />
               <bdi
                 :dir="isOutgoingFolder(message) ? 'auto' : 'ltr'"
                 class="truncate text-sm"
@@ -380,7 +380,7 @@ onMounted(() => loadList(1))
               <span class="mr-auto shrink-0 text-xs text-gray-400">{{ formatDate(message.date) }}</span>
             </div>
 
-            <div class="flex items-center gap-1.5 pr-4">
+            <div class="flex items-center gap-1.5">
               <p class="truncate text-sm" :class="message.is_read ? 'text-gray-600' : 'font-medium text-gray-800'">
                 {{ message.subject || '(بدون موضوع)' }}
               </p>
@@ -401,12 +401,12 @@ onMounted(() => loadList(1))
               </svg>
             </div>
 
-            <div class="flex items-center justify-between pr-4">
+            <div class="flex items-center justify-between">
               <p class="truncate text-xs text-gray-400">{{ message.preview }}</p>
               <div class="flex shrink-0 items-center gap-1">
                 <button
                   type="button"
-                  class="rounded p-0.5 hover:bg-gray-200"
+                  class="rounded-md p-1 transition hover:bg-amber-50"
                   :aria-label="message.is_flagged ? 'حذف ستاره' : 'ستاره‌دار کردن'"
                   @click="toggleFlag($event, message)"
                 >
@@ -428,7 +428,7 @@ onMounted(() => loadList(1))
                 <button
                   type="button"
                   :disabled="messages.deletingId === message.id"
-                  class="rounded p-0.5 text-gray-300 hover:bg-gray-200 hover:text-red-500 disabled:cursor-wait"
+                  class="rounded-md p-1 text-gray-300 transition hover:bg-red-50 hover:text-red-500 disabled:cursor-wait"
                   :aria-label="deleteLabel(message)"
                   @click="deleteMessage($event, message)"
                 >
@@ -452,7 +452,7 @@ onMounted(() => loadList(1))
                       {{ folder.display_name }}
                     </option>
                   </select>
-                  <span class="pointer-events-none flex rounded p-0.5 text-gray-300 hover:bg-gray-200 hover:text-indigo-500">
+                  <span class="pointer-events-none flex rounded-md p-1 text-gray-300 transition hover:bg-indigo-50 hover:text-indigo-500">
                     <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
                       <path
                         stroke-linecap="round"

@@ -138,9 +138,9 @@ function toggleFlag() {
     </EmptyState>
 
     <template v-else>
-      <div class="flex items-start justify-between gap-3 border-b border-gray-200 px-6 py-4">
+      <div class="flex items-start justify-between gap-3 border-b border-gray-100 px-6 py-5">
         <div class="min-w-0">
-          <h1 class="mb-1 truncate text-lg font-bold text-gray-900">
+          <h1 class="mb-1.5 truncate text-xl font-bold tracking-tight text-gray-900">
             {{ messages.selected.subject || '(بدون موضوع)' }}
           </h1>
           <p class="text-sm text-gray-600">
@@ -161,21 +161,21 @@ function toggleFlag() {
         <div class="flex shrink-0 items-center gap-1">
           <button
             type="button"
-            class="rounded-lg px-2.5 py-1.5 text-xs font-medium text-gray-500 hover:bg-gray-100"
+            class="rounded-lg px-3 py-1.5 text-xs font-semibold text-gray-600 transition hover:bg-gray-100"
             @click="reply"
           >
             پاسخ
           </button>
           <button
             type="button"
-            class="rounded-lg px-2.5 py-1.5 text-xs font-medium text-gray-500 hover:bg-gray-100"
+            class="rounded-lg px-3 py-1.5 text-xs font-semibold text-gray-600 transition hover:bg-gray-100"
             @click="forward"
           >
             ارجاع
           </button>
           <button
             type="button"
-            class="rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+            class="rounded-lg p-2 text-gray-400 transition hover:bg-amber-50 hover:text-amber-500"
             :disabled="messages.flagUpdatingId === messages.selected.id"
             :aria-label="messages.selected.is_flagged ? 'حذف ستاره' : 'ستاره‌دار کردن'"
             @click="toggleFlag"
@@ -198,7 +198,7 @@ function toggleFlag() {
 
           <button
             type="button"
-            class="rounded-lg px-2.5 py-1.5 text-xs font-medium text-gray-500 hover:bg-gray-100"
+            class="rounded-lg px-3 py-1.5 text-xs font-semibold text-gray-600 transition hover:bg-gray-100"
             :disabled="messages.flagUpdatingId === messages.selected.id"
             @click="toggleRead"
           >
@@ -208,7 +208,7 @@ function toggleFlag() {
           <button
             type="button"
             :disabled="messages.deletingId === messages.selected.id"
-            class="rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-red-500 disabled:cursor-wait"
+            class="rounded-lg p-2 text-gray-400 transition hover:bg-red-50 hover:text-red-500 disabled:cursor-wait"
             :aria-label="isTrash ? 'حذف برای همیشه' : 'انتقال به سطل زباله'"
             @click="deleteMessage"
           >
@@ -233,7 +233,7 @@ function toggleFlag() {
                 {{ folder.display_name }}
               </option>
             </select>
-            <span class="pointer-events-none flex rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-indigo-500">
+            <span class="pointer-events-none flex rounded-lg p-2 text-gray-400 transition hover:bg-indigo-50 hover:text-indigo-500">
               <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
                 <path
                   stroke-linecap="round"
@@ -246,7 +246,7 @@ function toggleFlag() {
 
           <button
             type="button"
-            class="rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+            class="rounded-lg p-2 text-gray-400 transition hover:bg-gray-100 hover:text-gray-600"
             aria-label="بستن"
             @click="messages.closeMessage()"
           >
@@ -266,7 +266,7 @@ function toggleFlag() {
             :key="attachment.id"
             type="button"
             :disabled="downloadingId === attachment.id"
-            class="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-1 text-xs text-gray-600 hover:bg-gray-100 disabled:cursor-wait disabled:opacity-60"
+            class="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs font-medium text-gray-600 transition hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-700 disabled:cursor-wait disabled:opacity-60"
             @click="downloadAttachment(attachment)"
           >
             <svg

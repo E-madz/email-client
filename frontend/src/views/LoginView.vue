@@ -30,11 +30,14 @@ async function handleSubmit() {
 </script>
 
 <template>
-  <div class="flex min-h-screen items-center justify-center bg-gray-50 px-4">
-    <div class="w-full max-w-sm rounded-2xl bg-white p-8 shadow-lg shadow-gray-200/60">
+  <div
+    class="flex min-h-screen items-center justify-center px-4"
+    style="background: radial-gradient(circle at 15% 15%, #eef2ff 0%, transparent 45%), radial-gradient(circle at 85% 85%, #f5f3ff 0%, transparent 45%), #f8fafc"
+  >
+    <div class="w-full max-w-sm rounded-3xl border border-gray-100 bg-white p-8 shadow-xl shadow-indigo-950/5">
       <div class="mb-8 text-center">
-        <div class="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-indigo-100 text-indigo-600">
-          <svg class="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+        <div class="brand-gradient mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl text-white shadow-lg shadow-indigo-500/30">
+          <svg class="h-7 w-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
             <path
               stroke-linecap="round"
               stroke-linejoin="round"
@@ -42,42 +45,42 @@ async function handleSubmit() {
             />
           </svg>
         </div>
-        <h1 class="text-xl font-bold text-gray-900">ورود به ایمیل من</h1>
-        <p class="mt-1 text-sm text-gray-500">با نام کاربری خود وارد شوید</p>
+        <h1 class="text-2xl font-bold tracking-tight text-gray-900">خوش آمدید</h1>
+        <p class="mt-1.5 text-sm text-gray-500">با نام کاربری خود وارد ایمیل من شوید</p>
       </div>
 
       <form class="space-y-4" @submit.prevent="handleSubmit">
         <div>
-          <label for="username" class="mb-1 block text-sm font-medium text-gray-700">نام کاربری</label>
+          <label for="username" class="mb-1.5 block text-sm font-medium text-gray-700">نام کاربری</label>
           <input
             id="username"
             v-model="form.username"
             type="text"
             autocomplete="username"
             required
-            class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            class="w-full rounded-xl border border-gray-200 bg-gray-50/60 px-3.5 py-2.5 text-sm transition focus:border-indigo-400 focus:bg-white focus:outline-none focus:ring-4 focus:ring-indigo-500/10"
           />
           <p v-if="fieldErrors.username" class="mt-1 text-xs text-red-600">{{ fieldErrors.username[0] }}</p>
         </div>
 
         <div>
-          <label for="password" class="mb-1 block text-sm font-medium text-gray-700">رمز عبور</label>
+          <label for="password" class="mb-1.5 block text-sm font-medium text-gray-700">رمز عبور</label>
           <input
             id="password"
             v-model="form.password"
             type="password"
             autocomplete="current-password"
             required
-            class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            class="w-full rounded-xl border border-gray-200 bg-gray-50/60 px-3.5 py-2.5 text-sm transition focus:border-indigo-400 focus:bg-white focus:outline-none focus:ring-4 focus:ring-indigo-500/10"
           />
         </div>
 
-        <p v-if="errorMessage" class="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{{ errorMessage }}</p>
+        <p v-if="errorMessage" class="rounded-xl bg-red-50 px-3.5 py-2.5 text-sm text-red-700">{{ errorMessage }}</p>
 
         <button
           type="submit"
           :disabled="auth.submitting"
-          class="flex w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+          class="brand-gradient flex w-full items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-500/25 transition hover:shadow-indigo-500/40 hover:brightness-110 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:brightness-100"
         >
           <span
             v-if="auth.submitting"
@@ -89,7 +92,7 @@ async function handleSubmit() {
 
       <p class="mt-6 text-center text-sm text-gray-500">
         حساب ندارید؟
-        <RouterLink :to="{ name: 'register' }" class="font-medium text-indigo-600 hover:text-indigo-700">
+        <RouterLink :to="{ name: 'register' }" class="font-semibold text-indigo-600 hover:text-indigo-700">
           ثبت‌نام کنید
         </RouterLink>
       </p>

@@ -9,7 +9,7 @@ defineEmits(['retry'])
 </script>
 
 <template>
-  <div class="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+  <div class="flex items-start gap-3 rounded-xl border border-red-100 bg-red-50/80 p-4 text-sm text-red-700">
     <svg class="mt-0.5 h-5 w-5 shrink-0" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
       <path
         fill-rule="evenodd"

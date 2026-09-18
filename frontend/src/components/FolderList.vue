@@ -227,7 +227,7 @@ onMounted(loadFolders)
         type="text"
         placeholder="نام پوشه"
         :disabled="folders.creating"
-        class="w-full rounded-lg border border-gray-200 px-2 py-1 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+        class="w-full rounded-lg border border-gray-200 bg-gray-50/60 px-2.5 py-1.5 text-sm transition focus:border-indigo-400 focus:bg-white focus:outline-none focus:ring-4 focus:ring-indigo-500/10"
         @keydown.escape="cancelCreating"
         @blur="!newFolderName && cancelCreating()"
       />

@@ -58,10 +58,10 @@ async function handleLogout() {
 
 <template>
   <div class="flex h-screen flex-col bg-gray-50">
-    <header class="flex h-14 shrink-0 items-center justify-between border-b border-gray-200 bg-white px-4">
-      <div class="flex items-center gap-2">
-        <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600 text-white">
-          <svg class="h-4.5 w-4.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true">
+    <header class="flex h-16 shrink-0 items-center justify-between border-b border-gray-200/80 bg-white/80 px-5 backdrop-blur-sm">
+      <div class="flex items-center gap-2.5">
+        <div class="brand-gradient flex h-9 w-9 items-center justify-center rounded-xl text-white shadow-md shadow-indigo-500/25">
+          <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true">
             <path
               stroke-linecap="round"
               stroke-linejoin="round"
@@ -69,14 +69,14 @@ async function handleLogout() {
             />
           </svg>
         </div>
-        <span class="font-bold text-gray-900">ایمیل من</span>
+        <span class="text-[15px] font-bold tracking-tight text-gray-900">ایمیل من</span>
       </div>
 
       <div class="flex items-center gap-3">
         <button
           type="button"
           :disabled="!activeAccountId"
-          class="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+          class="brand-gradient flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-sm font-semibold text-white shadow-md shadow-indigo-500/25 transition hover:shadow-indigo-500/40 hover:brightness-110 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:brightness-100"
           @click="compose.open(activeAccountId)"
         >
           <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true">
@@ -84,10 +84,11 @@ async function handleLogout() {
           </svg>
           نوشتن ایمیل
         </button>
-        <span class="text-sm text-gray-500">{{ auth.user?.name }}</span>
+        <div class="mx-1 h-6 w-px bg-gray-200" />
+        <span class="text-sm font-medium text-gray-600">{{ auth.user?.name }}</span>
         <button
           type="button"
-          class="rounded-lg px-3 py-1.5 text-sm font-medium text-gray-500 hover:bg-gray-100"
+          class="rounded-xl px-3 py-2 text-sm font-medium text-gray-500 transition hover:bg-gray-100 hover:text-gray-700"
           @click="handleLogout"
         >
           خروج
@@ -98,13 +99,13 @@ async function handleLogout() {
     <LoadingSpinner v-if="accounts.loading && !accounts.items.length" label="در حال بارگذاری اکانت‌ها…" />
 
     <div v-else class="flex min-h-0 flex-1">
-      <aside class="thin-scrollbar w-64 shrink-0 overflow-y-auto border-l border-gray-200 bg-white p-3">
+      <aside class="thin-scrollbar w-64 shrink-0 overflow-y-auto border-l border-gray-200/80 bg-white p-3">
         <AccountSwitcher @change="handleAccountChange" />
         <div class="my-3 border-t border-gray-100" />
         <FolderList :account-id="activeAccountId" @select="handleFolderSelect" />
       </aside>
 
-      <section class="w-96 shrink-0 border-l border-gray-200 bg-white">
+      <section class="w-96 shrink-0 border-l border-gray-200/80 bg-white">
         <MessageList :folder-id="activeFolderId" :account-id="activeAccountId" @select="openMessage" />
       </section>
 
