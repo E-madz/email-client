@@ -1,5 +1,5 @@
 <script setup>
-import { watch, onMounted } from 'vue'
+import { watch, onMounted, computed } from 'vue'
 import { useMessagesStore } from '../stores/messages'
 import { useFoldersStore } from '../stores/folders'
 import LoadingSpinner from './LoadingSpinner.vue'
@@ -14,6 +14,8 @@ const emit = defineEmits(['select'])
 
 const messages = useMessagesStore()
 const folders = useFoldersStore()
+
+const isTrash = computed(() => folders.active?.type === 'trash')
 
 const dateFormatter = new Intl.DateTimeFormat('fa-IR', { dateStyle: 'short', timeStyle: 'short' })
 function formatDate(iso) {
@@ -50,6 +52,23 @@ function toggleFlag(event, message) {
   messages.setFlags(message.id, { is_flagged: !message.is_flagged })
 }
 
+function deleteMessage(event, message) {
+  event.stopPropagation()
+
+  if (isTrash.value && !confirm('این پیام برای همیشه حذف شود؟ این کار قابل بازگشت نیست.')) {
+    return
+  }
+
+  messages.deleteMessage(message.id)
+}
+
+function emptyTrash() {
+  if (!props.folderId) return
+  if (!confirm('همه‌ی پیام‌های سطل زباله برای همیشه حذف شوند؟ این کار قابل بازگشت نیست.')) return
+
+  messages.emptyTrash(props.folderId)
+}
+
 function goToPage(page) {
   if (page >= 1 && page <= (messages.meta?.last_page ?? 1)) {
     loadList(page)
@@ -64,29 +83,40 @@ onMounted(() => loadList(1))
   <div class="flex h-full flex-col">
     <div class="flex items-center justify-between border-b border-gray-200 px-4 py-3">
       <h2 class="text-sm font-semibold text-gray-800">پیام‌ها</h2>
-      <button
-        type="button"
-        :disabled="!folderId || messages.syncing"
-        class="flex items-center gap-1.5 rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs font-medium text-gray-600 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
-        @click="syncNow"
-      >
-        <svg
-          class="h-3.5 w-3.5"
-          :class="{ 'animate-spin': messages.syncing }"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          aria-hidden="true"
+      <div class="flex items-center gap-2">
+        <button
+          v-if="isTrash && messages.items.length"
+          type="button"
+          :disabled="messages.emptyingTrash"
+          class="flex items-center gap-1.5 rounded-lg border border-red-200 px-2.5 py-1.5 text-xs font-medium text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+          @click="emptyTrash"
         >
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99"
-          />
-        </svg>
-        {{ messages.syncing ? 'در حال دریافت…' : 'دریافت ایمیل جدید' }}
-      </button>
+          {{ messages.emptyingTrash ? 'در حال خالی کردن…' : 'خالی کردن سطل زباله' }}
+        </button>
+        <button
+          type="button"
+          :disabled="!folderId || messages.syncing"
+          class="flex items-center gap-1.5 rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs font-medium text-gray-600 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+          @click="syncNow"
+        >
+          <svg
+            class="h-3.5 w-3.5"
+            :class="{ 'animate-spin': messages.syncing }"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            aria-hidden="true"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99"
+            />
+          </svg>
+          {{ messages.syncing ? 'در حال دریافت…' : 'دریافت ایمیل جدید' }}
+        </button>
+      </div>
     </div>
 
     <ErrorBanner
@@ -94,6 +124,18 @@ onMounted(() => loadList(1))
       class="mx-4 mt-3"
       :message="messages.syncError?.message ?? 'دریافت ایمیل‌های جدید با خطا مواجه شد.'"
       @retry="syncNow"
+    />
+    <ErrorBanner
+      v-if="messages.emptyTrashError"
+      class="mx-4 mt-3"
+      :message="messages.emptyTrashError?.message ?? 'خالی کردن سطل زباله با خطا مواجه شد.'"
+      :show-retry="false"
+    />
+    <ErrorBanner
+      v-if="messages.deleteError"
+      class="mx-4 mt-3"
+      :message="messages.deleteError?.message ?? 'حذف پیام با خطا مواجه شد.'"
+      :show-retry="false"
     />
 
     <div class="thin-scrollbar flex-1 overflow-y-auto">
@@ -162,27 +204,44 @@ onMounted(() => loadList(1))
 
             <div class="flex items-center justify-between pr-4">
               <p class="truncate text-xs text-gray-400">{{ message.preview }}</p>
-              <button
-                type="button"
-                class="shrink-0 rounded p-0.5 hover:bg-gray-200"
-                :aria-label="message.is_flagged ? 'حذف ستاره' : 'ستاره‌دار کردن'"
-                @click="toggleFlag($event, message)"
-              >
-                <svg
-                  class="h-4 w-4"
-                  :class="message.is_flagged ? 'fill-amber-400 text-amber-400' : 'fill-none text-gray-300'"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  stroke-width="1.5"
-                  aria-hidden="true"
+              <div class="flex shrink-0 items-center gap-1">
+                <button
+                  type="button"
+                  class="rounded p-0.5 hover:bg-gray-200"
+                  :aria-label="message.is_flagged ? 'حذف ستاره' : 'ستاره‌دار کردن'"
+                  @click="toggleFlag($event, message)"
                 >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    d="m11.48 3.499 2.222 4.5 4.966.723-3.594 3.503.848 4.946L11.48 14.75l-4.442 2.421.848-4.946L4.29 8.722l4.966-.723 2.223-4.5Z"
-                  />
-                </svg>
-              </button>
+                  <svg
+                    class="h-4 w-4"
+                    :class="message.is_flagged ? 'fill-amber-400 text-amber-400' : 'fill-none text-gray-300'"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    stroke-width="1.5"
+                    aria-hidden="true"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      d="m11.48 3.499 2.222 4.5 4.966.723-3.594 3.503.848 4.946L11.48 14.75l-4.442 2.421.848-4.946L4.29 8.722l4.966-.723 2.223-4.5Z"
+                    />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  :disabled="messages.deletingId === message.id"
+                  class="rounded p-0.5 text-gray-300 hover:bg-gray-200 hover:text-red-500 disabled:cursor-wait"
+                  :aria-label="isTrash ? 'حذف برای همیشه' : 'انتقال به سطل زباله'"
+                  @click="deleteMessage($event, message)"
+                >
+                  <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      d="m14.74 9-.346 9M9.606 9l.346 9M4.772 5.79A2.25 2.25 0 0 1 6.999 4h9.998a2.25 2.25 0 0 1 2.227 1.79M4.772 5.79 4 5.018M4.772 5.79 6.09 21.243A2.25 2.25 0 0 0 8.334 23h7.332a2.25 2.25 0 0 0 2.244-2.007L19 5.79M19.228 5.79H4.772"
+                    />
+                  </svg>
+                </button>
+              </div>
             </div>
           </button>
         </li>

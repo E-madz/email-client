@@ -31,7 +31,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/folders/{folder}/sync', [FolderController::class, 'sync']);
         Route::get('/messages/{message}', [MessageController::class, 'show']);
         Route::patch('/messages/{message}/flags', [MessageController::class, 'updateFlags']);
+        Route::delete('/messages/{message}', [MessageController::class, 'destroy']);
         Route::post('/email-accounts/{emailAccount}/messages', [ComposeController::class, 'send']);
+        Route::delete('/folders/{folder}/messages', [FolderController::class, 'emptyTrash']);
     });
 
     // Local-DB-only, no live IMAP/SMTP call — not subject to the mail-server-facing throttle above.

@@ -14,6 +14,7 @@ use App\Http\Resources\MessageResource;
 use App\Models\Folder;
 use App\Models\Message;
 use App\Services\Mail\MessageContentService;
+use App\Services\Mail\MessageDeletionService;
 use App\Services\Mail\MessageFlagService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -26,6 +27,7 @@ class MessageController extends Controller
     public function __construct(
         private readonly MessageContentService $messageContentService,
         private readonly MessageFlagService $messageFlagService,
+        private readonly MessageDeletionService $messageDeletionService,
     ) {
         //
     }
@@ -73,6 +75,31 @@ class MessageController extends Controller
                 $request->has('is_read') ? $request->boolean('is_read') : null,
                 $request->has('is_flagged') ? $request->boolean('is_flagged') : null,
             );
+        } catch (ImapAuthenticationException|ImapConnectionException $e) {
+            return $this->respondToImapFailure($emailAccount, $e);
+        }
+
+        return (new MessageResource($message))->response();
+    }
+
+    /**
+     * Delete a message — context-aware, same as any real webmail client:
+     * from anywhere except Trash this moves it to Trash (recoverable); from
+     * inside Trash it's permanent.
+     */
+    public function destroy(Request $request, Message $message): JsonResponse
+    {
+        $emailAccount = $message->folder->emailAccount;
+        abort_unless($emailAccount->user_id === $request->user()->id, 403);
+
+        try {
+            if ($message->folder->type === 'trash') {
+                $this->messageDeletionService->deletePermanently($message);
+
+                return response()->json(null, 204);
+            }
+
+            $message = $this->messageDeletionService->moveToTrash($message);
         } catch (ImapAuthenticationException|ImapConnectionException $e) {
             return $this->respondToImapFailure($emailAccount, $e);
         }

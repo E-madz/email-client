@@ -58,6 +58,13 @@ export const useFoldersStore = defineStore('folders', {
       }
     },
 
+    setUnreadCount(folderId, count) {
+      const folder = this.items.find((item) => item.id === folderId)
+      if (folder) {
+        folder.unread_count = count
+      }
+    },
+
     /**
      * Record locally that a folder's messages were just synced, so we don't
      * ask for another automatic sync next time it's opened in this session.

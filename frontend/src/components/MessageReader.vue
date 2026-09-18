@@ -1,6 +1,7 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useMessagesStore } from '../stores/messages'
+import { useFoldersStore } from '../stores/folders'
 import { api, ApiError } from '../lib/api'
 import LoadingSpinner from './LoadingSpinner.vue'
 import ErrorBanner from './ErrorBanner.vue'
@@ -8,6 +9,20 @@ import EmptyState from './EmptyState.vue'
 import SafeHtmlFrame from './SafeHtmlFrame.vue'
 
 const messages = useMessagesStore()
+const folders = useFoldersStore()
+
+const isTrash = computed(() => folders.active?.type === 'trash')
+
+function deleteMessage() {
+  const message = messages.selected
+  if (!message) return
+
+  if (isTrash.value && !confirm('این پیام برای همیشه حذف شود؟ این کار قابل بازگشت نیست.')) {
+    return
+  }
+
+  messages.deleteMessage(message.id)
+}
 
 const downloadingId = ref(null)
 const downloadError = ref(null)
@@ -128,6 +143,22 @@ function toggleFlag() {
             @click="toggleRead"
           >
             {{ messages.selected.is_read ? 'علامت‌گذاری به‌عنوان خوانده‌نشده' : 'علامت‌گذاری به‌عنوان خوانده‌شده' }}
+          </button>
+
+          <button
+            type="button"
+            :disabled="messages.deletingId === messages.selected.id"
+            class="rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-red-500 disabled:cursor-wait"
+            :aria-label="isTrash ? 'حذف برای همیشه' : 'انتقال به سطل زباله'"
+            @click="deleteMessage"
+          >
+            <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="m14.74 9-.346 9M9.606 9l.346 9M4.772 5.79A2.25 2.25 0 0 1 6.999 4h9.998a2.25 2.25 0 0 1 2.227 1.79M4.772 5.79 4 5.018M4.772 5.79 6.09 21.243A2.25 2.25 0 0 0 8.334 23h7.332a2.25 2.25 0 0 0 2.244-2.007L19 5.79M19.228 5.79H4.772"
+              />
+            </svg>
           </button>
 
           <button

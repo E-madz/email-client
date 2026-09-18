@@ -13,6 +13,7 @@ use App\Http\Resources\MessageResource;
 use App\Models\EmailAccount;
 use App\Models\Folder;
 use App\Services\Mail\FolderSyncService;
+use App\Services\Mail\MessageDeletionService;
 use App\Services\Mail\MessageSyncService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -24,6 +25,7 @@ class FolderController extends Controller
     public function __construct(
         private readonly FolderSyncService $folderSyncService,
         private readonly MessageSyncService $messageSyncService,
+        private readonly MessageDeletionService $messageDeletionService,
     ) {
         //
     }
@@ -59,5 +61,25 @@ class FolderController extends Controller
         }
 
         return MessageResource::collection($newMessages)->response();
+    }
+
+    /**
+     * Permanently delete every message in the Trash folder — remote-first
+     * (each message is flagged \Deleted and the folder expunged) before the
+     * local rows are removed, same ordering discipline as every other
+     * IMAP-backed write in this app.
+     */
+    public function emptyTrash(Request $request, Folder $folder): JsonResponse
+    {
+        abort_unless($folder->emailAccount->user_id === $request->user()->id, 403);
+        abort_unless($folder->type === 'trash', 422, 'Only the Trash folder can be emptied.');
+
+        try {
+            $deleted = $this->messageDeletionService->emptyTrash($folder);
+        } catch (ImapAuthenticationException|ImapConnectionException $e) {
+            return $this->respondToImapFailure($folder->emailAccount, $e);
+        }
+
+        return response()->json(['deleted' => $deleted]);
     }
 }

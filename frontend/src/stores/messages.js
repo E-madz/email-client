@@ -17,6 +17,10 @@ export const useMessagesStore = defineStore('messages', {
     detailError: null,
 
     flagUpdatingId: null,
+    deletingId: null,
+    deleteError: null,
+    emptyingTrash: false,
+    emptyTrashError: null,
   }),
 
   actions: {
@@ -100,6 +104,71 @@ export const useMessagesStore = defineStore('messages', {
         return updated
       } finally {
         this.flagUpdatingId = null
+      }
+    },
+
+    /**
+     * Context-aware, same as the backend endpoint it calls: from anywhere
+     * except Trash this moves the message to Trash (recoverable); from
+     * inside Trash it's permanent.
+     */
+    async deleteMessage(messageId) {
+      this.deletingId = messageId
+      this.deleteError = null
+
+      const folders = useFoldersStore()
+      const target = this.items.find((item) => item.id === messageId)
+      const wasUnread = target ? !target.is_read : false
+      const wasInTrash = folders.active?.type === 'trash'
+
+      try {
+        await api.delete(`/messages/${messageId}`)
+
+        this.items = this.items.filter((item) => item.id !== messageId)
+        if (this.selected?.id === messageId) {
+          this.closeMessage()
+        }
+
+        if (wasUnread) {
+          folders.adjustUnreadCount(this.folderId, -1)
+
+          if (!wasInTrash) {
+            const trash = folders.items.find((folder) => folder.type === 'trash')
+            if (trash) {
+              folders.adjustUnreadCount(trash.id, 1)
+            }
+          }
+        }
+      } catch (error) {
+        this.deleteError = error
+        throw error
+      } finally {
+        this.deletingId = null
+      }
+    },
+
+    /**
+     * Permanently delete every message in the Trash folder (FR request:
+     * "empty trash" button).
+     */
+    async emptyTrash(folderId) {
+      this.emptyingTrash = true
+      this.emptyTrashError = null
+
+      try {
+        await api.delete(`/folders/${folderId}/messages`)
+
+        if (this.folderId === folderId) {
+          this.items = []
+          this.meta = null
+        }
+
+        useFoldersStore().setUnreadCount(folderId, 0)
+      } catch (error) {
+        this.emptyTrashError = error
+        throw error
+      } finally {
+        this.emptyingTrash = false
       }
     },
 
