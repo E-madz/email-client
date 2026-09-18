@@ -32,7 +32,16 @@ final class FolderCreationService
         $client = $this->connectionFactory->connectForAccount($emailAccount);
 
         try {
-            $created = $this->connectionFactory->guard(fn () => $client->createFolder($name));
+            // expunge: false — webklex's default (true) issues an IMAP EXPUNGE
+            // right after CREATE, but EXPUNGE is only valid on a currently
+            // selected mailbox (RFC 3501) and this service never selects one.
+            // Real-world lesson: against a real IranServer account, the CREATE
+            // succeeded but the trailing EXPUNGE failed with "no mailbox
+            // selected", so the whole call threw even though the folder was
+            // already created — a refresh showed it, the error was a false
+            // negative. There's nothing to expunge for a brand-new folder
+            // anyway, so it's simply unneeded here.
+            $created = $this->connectionFactory->guard(fn () => $client->createFolder($name, expunge: false));
 
             if ($created === null) {
                 throw new ImapConnectionException("Could not create the folder \"{$name}\" on the mail server.");

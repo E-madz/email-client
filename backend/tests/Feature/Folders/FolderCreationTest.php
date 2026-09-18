@@ -35,7 +35,7 @@ class FolderCreationTest extends TestCase
         $client = Mockery::mock(Client::class);
         $client->shouldReceive('connect')->andReturnSelf();
         $client->shouldReceive('disconnect')->andReturnSelf();
-        $client->shouldReceive('createFolder')->with($expectedName)->once()->andReturn($imapFolder);
+        $client->shouldReceive('createFolder')->with($expectedName, expunge: false)->once()->andReturn($imapFolder);
 
         $this->mock(ClientManager::class, function (MockInterface $mock) use ($client) {
             $mock->shouldReceive('make')->andReturn($client);
