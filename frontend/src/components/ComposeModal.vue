@@ -88,6 +88,7 @@ const titles = {
               v-model="compose.draft.cc"
               type="text"
               dir="ltr"
+              placeholder="a@example.com, b@example.com"
               class="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
             />
           </label>
@@ -97,6 +98,7 @@ const titles = {
               v-model="compose.draft.bcc"
               type="text"
               dir="ltr"
+              placeholder="a@example.com, b@example.com"
               class="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
             />
           </label>
