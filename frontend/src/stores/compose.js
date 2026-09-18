@@ -177,15 +177,17 @@ export const useComposeStore = defineStore('compose', {
         if (this.replyToMessageId) {
           formData.append('in_reply_to_message_id', String(this.replyToMessageId))
         }
+        if (this.editingDraftId) {
+          formData.append('draft_message_id', String(this.editingDraftId))
+        }
 
         await api.postForm(`/email-accounts/${this.accountId}/messages`, formData)
 
-        // A draft being sent is done being a draft — clean it up (moves to
-        // Trash, recoverable, same as any other message delete).
+        // The backend permanently removed the draft (superseded by the real
+        // Sent copy) — reflect that in the currently-displayed list too, if
+        // it's still showing.
         if (this.editingDraftId) {
-          useMessagesStore()
-            .deleteMessage(this.editingDraftId)
-            .catch(() => {})
+          useMessagesStore().removeMessageLocally(this.editingDraftId)
         }
 
         this.isOpen = false

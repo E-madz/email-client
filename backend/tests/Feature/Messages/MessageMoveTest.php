@@ -118,4 +118,57 @@ class MessageMoveTest extends TestCase
 
         $response->assertForbidden();
     }
+
+    /**
+     * §8 item 66 — Sent/Drafts only ever hold what the system itself put
+     * there (an actually-sent message, a saved draft); moving an arbitrary
+     * message into either would misrepresent it.
+     */
+    public function test_moving_a_message_into_the_sent_folder_is_rejected(): void
+    {
+        $user = User::factory()->create();
+        $account = EmailAccount::factory()->for($user)->create();
+        $inbox = Folder::factory()->for($account)->create(['name' => 'INBOX', 'type' => 'inbox']);
+        $sent = Folder::factory()->for($account)->create(['name' => 'Sent', 'type' => 'sent']);
+        $message = Message::factory()->for($inbox)->create();
+
+        $response = $this->actingAs($user, 'sanctum')->patchJson("/api/messages/{$message->id}/move", [
+            'folder_id' => $sent->id,
+        ]);
+
+        $response->assertStatus(422);
+        $this->assertDatabaseHas('messages', ['id' => $message->id, 'folder_id' => $inbox->id]);
+    }
+
+    public function test_moving_a_message_into_the_drafts_folder_is_rejected(): void
+    {
+        $user = User::factory()->create();
+        $account = EmailAccount::factory()->for($user)->create();
+        $inbox = Folder::factory()->for($account)->create(['name' => 'INBOX', 'type' => 'inbox']);
+        $drafts = Folder::factory()->for($account)->create(['name' => 'Drafts', 'type' => 'drafts']);
+        $message = Message::factory()->for($inbox)->create();
+
+        $response = $this->actingAs($user, 'sanctum')->patchJson("/api/messages/{$message->id}/move", [
+            'folder_id' => $drafts->id,
+        ]);
+
+        $response->assertStatus(422);
+        $this->assertDatabaseHas('messages', ['id' => $message->id, 'folder_id' => $inbox->id]);
+    }
+
+    public function test_moving_a_draft_out_of_the_drafts_folder_is_rejected(): void
+    {
+        $user = User::factory()->create();
+        $account = EmailAccount::factory()->for($user)->create();
+        $drafts = Folder::factory()->for($account)->create(['name' => 'Drafts', 'type' => 'drafts']);
+        $archive = Folder::factory()->for($account)->create(['name' => 'Archive', 'type' => 'archive']);
+        $draft = Message::factory()->for($drafts)->create();
+
+        $response = $this->actingAs($user, 'sanctum')->patchJson("/api/messages/{$draft->id}/move", [
+            'folder_id' => $archive->id,
+        ]);
+
+        $response->assertStatus(422);
+        $this->assertDatabaseHas('messages', ['id' => $draft->id, 'folder_id' => $drafts->id]);
+    }
 }

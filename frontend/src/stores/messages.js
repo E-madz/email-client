@@ -281,6 +281,19 @@ export const useMessagesStore = defineStore('messages', {
       }
     },
 
+    /**
+     * Removes a message from the currently-displayed list/selection without
+     * an API call — for cases where the backend has already made the change
+     * as a side effect of a different request (e.g. a sent draft being
+     * permanently deleted as part of the send itself, §8 item 65).
+     */
+    removeMessageLocally(messageId) {
+      this.items = this.items.filter((item) => item.id !== messageId)
+      if (this.selected?.id === messageId) {
+        this.closeMessage()
+      }
+    },
+
     reset() {
       this.items = []
       this.meta = null

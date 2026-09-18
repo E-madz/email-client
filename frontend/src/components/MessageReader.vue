@@ -36,7 +36,23 @@ function deleteMessage() {
   messages.deleteMessage(message.id)
 }
 
-const moveTargets = computed(() => folders.items.filter((folder) => folder.id !== messages.selected?.folder_id))
+// Sent/Drafts only ever hold what the system itself put there — moving an
+// arbitrary message into either would misrepresent it, so the backend
+// rejects it too (§8 item 66).
+const UNMOVABLE_TARGET_TYPES = ['sent', 'drafts']
+const moveTargets = computed(() =>
+  folders.items.filter(
+    (folder) => folder.id !== messages.selected?.folder_id && !UNMOVABLE_TARGET_TYPES.includes(folder.type),
+  ),
+)
+// A draft has its own lifecycle (edit/send/delete) — it can't be moved to an
+// arbitrary folder via this generic action. In practice a draft is opened in
+// the composer, not here, but a starred draft could still surface in this
+// reader via the cross-folder Starred view, so this stays defense-in-depth.
+const isMovable = computed(() => {
+  const folder = folders.items.find((item) => item.id === messages.selected?.folder_id)
+  return folder?.type !== 'drafts'
+})
 
 function handleMoveSelect(event) {
   const folderId = Number(event.target.value)
@@ -195,7 +211,7 @@ function toggleFlag() {
             </svg>
           </button>
 
-          <div class="relative">
+          <div v-if="isMovable" class="relative">
             <select
               class="absolute inset-0 h-9 w-9 cursor-pointer appearance-none opacity-0"
               :disabled="messages.movingId === messages.selected.id"

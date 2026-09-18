@@ -273,4 +273,67 @@ class ComposeControllerTest extends TestCase
         $response->assertCreated();
         $this->assertDatabaseMissing('messages', ['subject' => 'No sent folder yet']);
     }
+
+    /**
+     * §8 item 65 — a sent draft is superseded by the real Sent copy `send()`
+     * just recorded, so it's removed outright rather than left in Drafts.
+     */
+    public function test_sending_a_draft_permanently_removes_it_from_drafts(): void
+    {
+        $this->mockSuccessfulSend();
+        $this->mockSuccessfulImapAppend();
+
+        $user = User::factory()->create();
+        $account = EmailAccount::factory()->for($user)->create();
+        Folder::factory()->for($account)->create(['name' => 'Sent', 'type' => 'sent']);
+        $drafts = Folder::factory()->for($account)->create(['name' => 'Drafts', 'type' => 'drafts']);
+        $draft = Message::factory()->for($drafts)->create();
+
+        $response = $this->actingAs($user, 'sanctum')->postJson("/api/email-accounts/{$account->id}/messages", [
+            'to' => ['friend@example.com'],
+            'subject' => 'Finally sending this',
+            'body_html' => '<p>Hi</p>',
+            'draft_message_id' => $draft->id,
+        ]);
+
+        $response->assertCreated();
+        $this->assertDatabaseMissing('messages', ['id' => $draft->id]);
+    }
+
+    public function test_a_draft_from_another_account_cannot_be_referenced_when_sending(): void
+    {
+        $user = User::factory()->create();
+        $account = EmailAccount::factory()->for($user)->create();
+        $otherAccount = EmailAccount::factory()->for($user)->create();
+        $otherDrafts = Folder::factory()->for($otherAccount)->create(['name' => 'Drafts', 'type' => 'drafts']);
+        $draft = Message::factory()->for($otherDrafts)->create();
+
+        $response = $this->actingAs($user, 'sanctum')->postJson("/api/email-accounts/{$account->id}/messages", [
+            'to' => ['friend@example.com'],
+            'subject' => 'Hi',
+            'body_html' => '<p>Hi</p>',
+            'draft_message_id' => $draft->id,
+        ]);
+
+        $response->assertStatus(422);
+        $response->assertJsonValidationErrors(['draft_message_id']);
+    }
+
+    public function test_a_non_draft_message_cannot_be_referenced_as_draft_message_id(): void
+    {
+        $user = User::factory()->create();
+        $account = EmailAccount::factory()->for($user)->create();
+        $inbox = Folder::factory()->for($account)->create(['name' => 'INBOX', 'type' => 'inbox']);
+        $message = Message::factory()->for($inbox)->create();
+
+        $response = $this->actingAs($user, 'sanctum')->postJson("/api/email-accounts/{$account->id}/messages", [
+            'to' => ['friend@example.com'],
+            'subject' => 'Hi',
+            'body_html' => '<p>Hi</p>',
+            'draft_message_id' => $message->id,
+        ]);
+
+        $response->assertStatus(422);
+        $response->assertJsonValidationErrors(['draft_message_id']);
+    }
 }

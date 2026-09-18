@@ -12,8 +12,13 @@ const props = defineProps({
 const emit = defineEmits(['select', 'drop-message', 'delete'])
 
 // Starred is a virtual, cross-folder view (CLAUDE.md §8) — a message can't
-// be "moved into" it, so it's not a valid drop target.
-const isDroppable = props.folder.type !== 'starred'
+// be "moved into" it, so it's not a valid drop target. Sent/Drafts are real
+// folders but their contents mean something specific the backend enforces
+// (§8 item 66): Sent only ever holds what the account itself actually sent,
+// Drafts only ever holds what the compose flow saved — an arbitrary moved
+// message would misrepresent both, so neither is offered as a drop target.
+const UNMOVABLE_TARGET_TYPES = ['starred', 'sent', 'drafts']
+const isDroppable = !UNMOVABLE_TARGET_TYPES.includes(props.folder.type)
 const isDragOver = ref(false)
 
 function handleDragOver(event) {

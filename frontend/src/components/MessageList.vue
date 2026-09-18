@@ -23,6 +23,28 @@ function folderTypeOf(folderId) {
   return folders.items.find((item) => item.id === folderId)?.type
 }
 
+/**
+ * In Sent/Drafts the sender is always the account's own address — showing
+ * it is redundant and less useful than who the message actually went to
+ * (§8 item 66), matching every mainstream webmail client's list view.
+ */
+function isOutgoingFolder(message) {
+  const type = folderTypeOf(message.folder_id ?? props.folderId)
+  return type === 'sent' || type === 'drafts'
+}
+
+function displayIdentity(message) {
+  if (!isOutgoingFolder(message)) {
+    return message.from.name || message.from.email
+  }
+
+  if (!message.to?.length) {
+    return 'بدون گیرنده'
+  }
+
+  return `به: ${message.to.map((recipient) => recipient.name || recipient.email).join('، ')}`
+}
+
 const dateFormatter = new Intl.DateTimeFormat('fa-IR', { dateStyle: 'short', timeStyle: 'short' })
 function formatDate(iso) {
   return dateFormatter.format(new Date(iso))
@@ -77,13 +99,30 @@ function deleteMessage(event, message) {
   messages.deleteMessage(message.id)
 }
 
+// Sent/Drafts only ever hold what the system itself put there (an actual
+// sent message, a saved draft) — moving an arbitrary message into either
+// would misrepresent it, so the backend rejects it too (§8 item 66).
+const UNMOVABLE_TARGET_TYPES = ['sent', 'drafts']
+
 /**
  * Folders a message could be moved to — every real folder except the one
- * it's currently in. Starred is never a candidate since it's a virtual view,
- * not a real folder (it's not part of `folders.items` at all).
+ * it's currently in and Sent/Drafts. Starred is never a candidate since
+ * it's a virtual view, not a real folder (it's not part of `folders.items`
+ * at all).
  */
 function moveTargets(message) {
-  return folders.items.filter((folder) => folder.id !== (message.folder_id ?? props.folderId))
+  return folders.items.filter(
+    (folder) => folder.id !== (message.folder_id ?? props.folderId) && !UNMOVABLE_TARGET_TYPES.includes(folder.type),
+  )
+}
+
+/**
+ * A draft has its own lifecycle (edit/send/delete) — it can't be moved to
+ * an arbitrary folder via this generic action, so neither the "move to"
+ * menu nor drag-and-drop is offered for a message sitting in Drafts.
+ */
+function isMovable(message) {
+  return folderTypeOf(message.folder_id ?? props.folderId) !== 'drafts'
 }
 
 function handleMoveSelect(event, message) {
@@ -219,11 +258,11 @@ onMounted(() => loadList(1))
         <li v-for="message in messages.items" :key="message.id">
           <button
             type="button"
-            draggable="true"
+            :draggable="isMovable(message)"
             class="flex w-full flex-col gap-1 px-4 py-3 text-right transition hover:bg-gray-50"
             :class="{ 'bg-indigo-50/60': messages.selected?.id === message.id }"
             @click="emit('select', message.id)"
-            @dragstart="handleDragStart($event, message)"
+            @dragstart="isMovable(message) && handleDragStart($event, message)"
           >
             <div class="flex items-center gap-2">
               <span
@@ -232,11 +271,11 @@ onMounted(() => loadList(1))
                 aria-hidden="true"
               />
               <bdi
-                dir="ltr"
+                :dir="isOutgoingFolder(message) ? 'auto' : 'ltr'"
                 class="truncate text-sm"
                 :class="message.is_read ? 'text-gray-600' : 'font-semibold text-gray-900'"
               >
-                {{ message.from.name || message.from.email }}
+                {{ displayIdentity(message) }}
               </bdi>
               <span class="mr-auto shrink-0 text-xs text-gray-400">{{ formatDate(message.date) }}</span>
             </div>
@@ -301,7 +340,7 @@ onMounted(() => loadList(1))
                     />
                   </svg>
                 </button>
-                <div class="relative" @click.stop>
+                <div v-if="isMovable(message)" class="relative" @click.stop>
                   <select
                     class="absolute inset-0 h-4 w-4 cursor-pointer appearance-none opacity-0"
                     :disabled="messages.movingId === message.id"

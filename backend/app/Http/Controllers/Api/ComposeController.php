@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
+use App\Exceptions\Mail\ImapAuthenticationException;
+use App\Exceptions\Mail\ImapConnectionException;
 use App\Exceptions\Mail\SmtpAuthenticationException;
 use App\Exceptions\Mail\SmtpConnectionException;
 use App\Http\Controllers\Concerns\HandlesSmtpMailExceptions;
@@ -12,15 +14,19 @@ use App\Http\Requests\Messages\SendMessageRequest;
 use App\Http\Resources\MessageDetailResource;
 use App\Models\EmailAccount;
 use App\Models\Message;
+use App\Services\Mail\MessageDeletionService;
 use App\Services\Mail\SmtpMailService;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Log;
 
 class ComposeController extends Controller
 {
     use HandlesSmtpMailExceptions;
 
-    public function __construct(private readonly SmtpMailService $mailService)
-    {
+    public function __construct(
+        private readonly SmtpMailService $mailService,
+        private readonly MessageDeletionService $messageDeletionService,
+    ) {
         //
     }
 
@@ -50,6 +56,37 @@ class ComposeController extends Controller
             return $this->respondToSmtpFailure($emailAccount, $e);
         }
 
+        $draftId = $request->validated('draft_message_id');
+
+        if ($draftId !== null) {
+            $this->deleteSentDraft($draftId);
+        }
+
         return (new MessageDetailResource($message->loadMissing('attachments')))->response()->setStatusCode(201);
+    }
+
+    /**
+     * A sent draft is superseded by the real Sent copy `send()` just
+     * recorded, so it's removed outright rather than left in Drafts or moved
+     * to Trash (§8 item 65). A failure here is logged, not surfaced — the
+     * message has already genuinely been sent either way, the same
+     * philosophy as the Sent-copy APPEND fallback (§8 item 59).
+     */
+    private function deleteSentDraft(int $draftId): void
+    {
+        $draft = Message::find($draftId);
+
+        if ($draft === null) {
+            return;
+        }
+
+        try {
+            $this->messageDeletionService->deletePermanently($draft);
+        } catch (ImapAuthenticationException|ImapConnectionException $e) {
+            Log::warning('Sent a draft successfully but failed to remove it from Drafts.', [
+                'message_id' => $draftId,
+                'exception' => $e->getMessage(),
+            ]);
+        }
     }
 }

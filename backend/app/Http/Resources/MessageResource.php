@@ -33,6 +33,11 @@ class MessageResource extends JsonResource
                 'name' => $this->from_name,
                 'email' => $this->from_email,
             ],
+            // Included alongside `from` (not instead of it) so the frontend
+            // can decide which to display: a Sent/Drafts list shows the
+            // recipient instead of the account's own address, since it's
+            // otherwise redundant with "who sent this" (§8 item 66).
+            'to' => $this->to ?? [],
             'date' => $this->date->toIso8601String(),
             'is_read' => $this->is_read,
             'is_flagged' => $this->is_flagged,
