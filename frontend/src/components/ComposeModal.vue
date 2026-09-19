@@ -80,17 +80,17 @@ const titles = {
 
         <label class="block">
           <span class="mb-1.5 block text-xs font-semibold text-gray-500">گیرنده</span>
-          <EmailTagInput v-model="compose.draft.to" placeholder="یک آدرس ایمیل بنویسید و Enter بزنید" />
+          <EmailTagInput v-model="compose.draft.to" :account-id="compose.accountId" placeholder="یک آدرس ایمیل بنویسید و Enter بزنید" />
         </label>
 
         <div class="grid grid-cols-2 gap-3">
           <label class="block">
             <span class="mb-1.5 block text-xs font-semibold text-gray-500">رونوشت (CC)</span>
-            <EmailTagInput v-model="compose.draft.cc" placeholder="یک آدرس ایمیل بنویسید و Enter بزنید" />
+            <EmailTagInput v-model="compose.draft.cc" :account-id="compose.accountId" placeholder="یک آدرس ایمیل بنویسید و Enter بزنید" />
           </label>
           <label class="block">
             <span class="mb-1.5 block text-xs font-semibold text-gray-500">رونوشت مخفی (BCC)</span>
-            <EmailTagInput v-model="compose.draft.bcc" placeholder="یک آدرس ایمیل بنویسید و Enter بزنید" />
+            <EmailTagInput v-model="compose.draft.bcc" :account-id="compose.accountId" placeholder="یک آدرس ایمیل بنویسید و Enter بزنید" />
           </label>
         </div>
 

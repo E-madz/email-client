@@ -1,9 +1,15 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
+import { api, ApiError } from '../lib/api'
 
 const props = defineProps({
   modelValue: { type: Array, default: () => [] },
   placeholder: { type: String, default: '' },
+  // The email account whose message history suggestions are drawn from
+  // (ContactSuggestionService, §8 — no dedicated contacts table, just a
+  // live query over already-synced messages). Suggestions are skipped
+  // entirely when this is null (e.g. no account selected yet).
+  accountId: { type: Number, default: null },
 })
 
 const emit = defineEmits(['update:modelValue'])
@@ -12,6 +18,61 @@ const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 const inputValue = ref('')
 const error = ref('')
+
+const suggestions = ref([])
+const activeSuggestionIndex = ref(-1)
+const showSuggestions = ref(false)
+let suggestDebounceTimer = null
+let suggestRequestToken = 0
+
+async function fetchSuggestions(query) {
+  if (!props.accountId || !query.trim()) {
+    suggestions.value = []
+    return
+  }
+
+  const requestToken = ++suggestRequestToken
+
+  try {
+    const result = await api.get(`/email-accounts/${props.accountId}/contacts?q=${encodeURIComponent(query.trim())}`)
+    // A slower, now-stale request could resolve after a newer one — ignore
+    // it rather than flashing outdated suggestions over fresh input.
+    if (requestToken !== suggestRequestToken) return
+
+    suggestions.value = result.filter((contact) => !props.modelValue.includes(contact.email))
+    activeSuggestionIndex.value = suggestions.value.length ? 0 : -1
+  } catch (err) {
+    if (!(err instanceof ApiError)) throw err
+    suggestions.value = []
+  }
+}
+
+watch(inputValue, (value) => {
+  clearTimeout(suggestDebounceTimer)
+  showSuggestions.value = true
+
+  if (!value.trim()) {
+    suggestions.value = []
+    return
+  }
+
+  suggestDebounceTimer = setTimeout(() => fetchSuggestions(value), 200)
+})
+
+function selectSuggestion(contact) {
+  addEmail(contact.email)
+  inputValue.value = ''
+  suggestions.value = []
+  showSuggestions.value = false
+}
+
+function closeSuggestions() {
+  // Deferred so a click on a suggestion (which blurs the input first)
+  // still registers before the list disappears.
+  setTimeout(() => {
+    showSuggestions.value = false
+  }, 150)
+}
 
 // Adds `raw` to `list` (a local working copy, not the prop directly) and
 // returns the resulting list — multiple additions in one call must share
@@ -71,9 +132,34 @@ function commitPending() {
 }
 
 function handleKeydown(event) {
+  const hasSuggestions = showSuggestions.value && suggestions.value.length > 0
+
+  if (event.key === 'ArrowDown' && hasSuggestions) {
+    event.preventDefault()
+    activeSuggestionIndex.value = (activeSuggestionIndex.value + 1) % suggestions.value.length
+    return
+  }
+
+  if (event.key === 'ArrowUp' && hasSuggestions) {
+    event.preventDefault()
+    activeSuggestionIndex.value = (activeSuggestionIndex.value - 1 + suggestions.value.length) % suggestions.value.length
+    return
+  }
+
+  if (event.key === 'Escape' && hasSuggestions) {
+    showSuggestions.value = false
+    return
+  }
+
   if (event.key === 'Enter' || event.key === ',') {
+    event.preventDefault()
+
+    if (hasSuggestions && activeSuggestionIndex.value >= 0) {
+      selectSuggestion(suggestions.value[activeSuggestionIndex.value])
+      return
+    }
+
     if (inputValue.value.trim()) {
-      event.preventDefault()
       commitPending()
     }
     return
@@ -111,6 +197,7 @@ function handlePaste(event) {
 }
 
 function handleBlur() {
+  closeSuggestions()
   commitPending()
 }
 
@@ -122,7 +209,7 @@ function removeChip(index) {
 </script>
 
 <template>
-  <div>
+  <div class="relative">
     <div
       class="flex min-h-[44px] flex-wrap items-center gap-1.5 rounded-xl border border-gray-200 bg-gray-50/60 px-2.5 py-1.5 transition focus-within:border-indigo-400 focus-within:bg-white focus-within:ring-4 focus-within:ring-indigo-500/10"
     >
@@ -156,8 +243,27 @@ function removeChip(index) {
         @keydown="handleKeydown"
         @paste="handlePaste"
         @blur="handleBlur"
+        @focus="showSuggestions = true"
       />
     </div>
     <p v-if="error" class="mt-1 text-xs text-red-600">{{ error }}</p>
+
+    <ul
+      v-if="showSuggestions && suggestions.length"
+      class="absolute z-10 mt-1 w-full max-w-xs overflow-hidden rounded-xl border border-gray-100 bg-white py-1 shadow-lg shadow-indigo-950/10"
+    >
+      <li
+        v-for="(contact, index) in suggestions"
+        :key="contact.email"
+        dir="ltr"
+        class="cursor-pointer px-3 py-2 text-sm transition"
+        :class="index === activeSuggestionIndex ? 'bg-indigo-50 text-indigo-700' : 'text-gray-700 hover:bg-gray-50'"
+        @mousedown.prevent="selectSuggestion(contact)"
+        @mouseenter="activeSuggestionIndex = index"
+      >
+        <span v-if="contact.name" class="font-medium">{{ contact.name }}</span>
+        <span :class="contact.name ? 'ml-1.5 text-xs text-gray-400' : ''">{{ contact.email }}</span>
+      </li>
+    </ul>
   </div>
 </template>

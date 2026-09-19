@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\AttachmentController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BulkMessageController;
 use App\Http\Controllers\Api\ComposeController;
+use App\Http\Controllers\Api\ContactController;
 use App\Http\Controllers\Api\DraftController;
 use App\Http\Controllers\Api\EmailAccountController;
 use App\Http\Controllers\Api\FolderController;
@@ -61,5 +62,6 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/folders/{folder}/messages', [MessageController::class, 'index']);
     Route::get('/email-accounts/{emailAccount}/starred-messages', [MessageController::class, 'starred']);
     Route::get('/email-accounts/{emailAccount}/search-messages', [MessageController::class, 'search']);
+    Route::get('/email-accounts/{emailAccount}/contacts', [ContactController::class, 'suggest']);
     Route::get('/attachments/{attachment}', [AttachmentController::class, 'download']);
 });
