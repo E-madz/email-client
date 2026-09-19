@@ -129,7 +129,10 @@ export const api = {
   post: (path, body, options) => request(path, { ...options, method: 'POST', body }),
   put: (path, body, options) => request(path, { ...options, method: 'PUT', body }),
   patch: (path, body, options) => request(path, { ...options, method: 'PATCH', body }),
-  delete: (path, options) => request(path, { ...options, method: 'DELETE' }),
+  // body is optional — most DELETE calls don't need one, but the bulk
+  // delete endpoint takes a message_ids list in the body (DELETE with a
+  // body is unusual but valid HTTP, and Laravel reads it like any other).
+  delete: (path, body, options) => request(path, { ...options, method: 'DELETE', body }),
   postForm: (path, formData, options) => request(path, { ...options, method: 'POST', body: formData, isFormData: true }),
   // PHP never parses a multipart body on a real PUT request, so this rides
   // Laravel's standard `_method` override on a POST instead (Illuminate\Http\Request

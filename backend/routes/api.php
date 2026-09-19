@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Http\Controllers\Api\AttachmentController;
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\BulkMessageController;
 use App\Http\Controllers\Api\ComposeController;
 use App\Http\Controllers\Api\DraftController;
 use App\Http\Controllers\Api\EmailAccountController;
@@ -37,6 +38,15 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::patch('/folders/{folder}', [FolderController::class, 'rename']);
         Route::delete('/folders/{folder}', [FolderController::class, 'destroy']);
         Route::post('/folders/{folder}/sync', [FolderController::class, 'sync']);
+
+        // Bulk message actions — registered before the single-message
+        // {message} routes below, since "bulk" would otherwise be captured
+        // as that route's {message} parameter (both patterns match the same
+        // URI shape; Laravel picks whichever is registered first).
+        Route::patch('/messages/bulk/flags', [BulkMessageController::class, 'updateFlags']);
+        Route::patch('/messages/bulk/move', [BulkMessageController::class, 'move']);
+        Route::delete('/messages/bulk', [BulkMessageController::class, 'destroy']);
+
         Route::get('/messages/{message}', [MessageController::class, 'show']);
         Route::patch('/messages/{message}/flags', [MessageController::class, 'updateFlags']);
         Route::patch('/messages/{message}/move', [MessageController::class, 'move']);

@@ -35,13 +35,23 @@ export const useMessagesStore = defineStore('messages', {
     emptyTrashError: null,
     movingId: null,
     moveError: null,
+
+    selectedIds: [],
+    bulkActionLoading: false,
+    bulkError: null,
   }),
+
+  getters: {
+    isSelected: (state) => (messageId) => state.selectedIds.includes(messageId),
+    selectionCount: (state) => state.selectedIds.length,
+  },
 
   actions: {
     async fetchList(folderId, page = 1) {
       this.folderId = folderId
       this.listLoading = true
       this.listError = null
+      this.clearSelection()
 
       try {
         const data = await api.get(`/folders/${folderId}/messages?page=${page}`)
@@ -63,6 +73,7 @@ export const useMessagesStore = defineStore('messages', {
       this.folderId = STARRED_ID
       this.listLoading = true
       this.listError = null
+      this.clearSelection()
 
       try {
         const data = await api.get(`/email-accounts/${accountId}/starred-messages?page=${page}`)
@@ -86,6 +97,7 @@ export const useMessagesStore = defineStore('messages', {
       this.searchAccountId = accountId
       this.listLoading = true
       this.listError = null
+      this.clearSelection()
 
       try {
         const data = await api.get(`/email-accounts/${accountId}/search-messages?q=${encodeURIComponent(query)}&page=${page}`)
@@ -316,6 +328,176 @@ export const useMessagesStore = defineStore('messages', {
       }
     },
 
+    toggleSelected(messageId) {
+      this.selectedIds = this.isSelected(messageId)
+        ? this.selectedIds.filter((id) => id !== messageId)
+        : [...this.selectedIds, messageId]
+    },
+
+    selectAllVisible() {
+      this.selectedIds = this.items.map((item) => item.id)
+    },
+
+    clearSelection() {
+      this.selectedIds = []
+    },
+
+    /**
+     * Bulk mark read/unread and/or star/unstar the current selection. Not
+     * optimistic like the single-message `setFlags()` — a bulk action can
+     * legitimately partially fail (one message gone, one folder briefly
+     * unreachable) and the backend reports exactly which ids succeeded, so
+     * it's simpler and more correct to apply the change only once that
+     * response is in rather than guess-then-roll-back per item.
+     */
+    async bulkSetFlags({ is_read, is_flagged } = {}) {
+      if (!this.selectedIds.length) return
+
+      this.bulkActionLoading = true
+      this.bulkError = null
+      const folders = useFoldersStore()
+
+      try {
+        const body = { message_ids: this.selectedIds }
+        if (is_read !== undefined) body.is_read = is_read
+        if (is_flagged !== undefined) body.is_flagged = is_flagged
+
+        const result = await api.patch('/messages/bulk/flags', body)
+        const byId = new Map(result.updated.map((message) => [message.id, message]))
+
+        this.items = this.items.map((item) => {
+          const updated = byId.get(item.id)
+          if (!updated) return item
+
+          if ('is_read' in updated && item.is_read !== updated.is_read) {
+            folders.adjustUnreadCount(item.folder_id, updated.is_read ? -1 : 1)
+          }
+
+          return { ...item, ...updated }
+        })
+
+        if (this.selected && byId.has(this.selected.id)) {
+          this.selected = { ...this.selected, ...byId.get(this.selected.id) }
+        }
+
+        if (result.failed.length) {
+          this.bulkError = { message: `${result.failed.length} پیام به‌روزرسانی نشد.` }
+        }
+
+        return result
+      } catch (error) {
+        this.bulkError = error
+        throw error
+      } finally {
+        this.bulkActionLoading = false
+      }
+    },
+
+    /**
+     * Bulk move the current selection to one target folder. Messages that
+     * fail the eligibility check (e.g. into Sent/Drafts) are skipped by the
+     * backend rather than failing the whole batch — reported via `bulkError`
+     * so the caller can tell the user, but the eligible ones still move.
+     */
+    async bulkMove(targetFolderId) {
+      if (!this.selectedIds.length) return
+
+      this.bulkActionLoading = true
+      this.bulkError = null
+      const folders = useFoldersStore()
+
+      try {
+        const result = await api.patch('/messages/bulk/move', {
+          message_ids: this.selectedIds,
+          folder_id: targetFolderId,
+        })
+
+        const movedIds = new Set(result.moved.map((message) => message.id))
+        const removeFromList = this.folderId !== STARRED_ID && this.folderId !== SEARCH_ID
+
+        this.items.forEach((item) => {
+          if (movedIds.has(item.id) && !item.is_read) {
+            folders.adjustUnreadCount(item.folder_id, -1)
+            folders.adjustUnreadCount(targetFolderId, 1)
+          }
+        })
+
+        if (removeFromList) {
+          this.items = this.items.filter((item) => !movedIds.has(item.id))
+        }
+
+        if (this.selected && movedIds.has(this.selected.id)) {
+          this.closeMessage()
+        }
+
+        this.clearSelection()
+
+        if (result.skipped.length) {
+          this.bulkError = { message: `${result.skipped.length} پیام قابل انتقال نبود.` }
+        }
+
+        return result
+      } catch (error) {
+        this.bulkError = error
+        throw error
+      } finally {
+        this.bulkActionLoading = false
+      }
+    },
+
+    /**
+     * Bulk delete the current selection — context-aware per message's own
+     * folder, same as the single-message delete action (move to Trash, or
+     * permanent if already there).
+     */
+    async bulkDelete() {
+      if (!this.selectedIds.length) return
+
+      this.bulkActionLoading = true
+      this.bulkError = null
+      const folders = useFoldersStore()
+
+      try {
+        const result = await api.delete('/messages/bulk', { message_ids: this.selectedIds })
+
+        const trashedIds = new Set(result.trashed.map((message) => message.id))
+        const requestedIds = new Set(this.selectedIds)
+        const failedIds = new Set(result.failed.map((entry) => entry.id))
+        // Anything requested that didn't come back as "trashed" and didn't
+        // fail was permanently deleted (the backend doesn't echo those rows
+        // back individually, only a count).
+        const removedIds = [...requestedIds].filter((id) => !failedIds.has(id))
+
+        this.items.forEach((item) => {
+          if (removedIds.includes(item.id) && !item.is_read) {
+            folders.adjustUnreadCount(item.folder_id, -1)
+            if (trashedIds.has(item.id)) {
+              const trash = folders.items.find((folder) => folder.type === 'trash')
+              if (trash) folders.adjustUnreadCount(trash.id, 1)
+            }
+          }
+        })
+
+        this.items = this.items.filter((item) => !removedIds.includes(item.id))
+        if (this.selected && removedIds.includes(this.selected.id)) {
+          this.closeMessage()
+        }
+
+        this.clearSelection()
+
+        if (result.failed.length) {
+          this.bulkError = { message: `${result.failed.length} پیام حذف نشد.` }
+        }
+
+        return result
+      } catch (error) {
+        this.bulkError = error
+        throw error
+      } finally {
+        this.bulkActionLoading = false
+      }
+    },
+
     /**
      * Removes a message from the currently-displayed list/selection without
      * an API call — for cases where the backend has already made the change
@@ -336,6 +518,7 @@ export const useMessagesStore = defineStore('messages', {
       this.selected = null
       this.searchQuery = ''
       this.searchAccountId = null
+      this.selectedIds = []
     },
   },
 })

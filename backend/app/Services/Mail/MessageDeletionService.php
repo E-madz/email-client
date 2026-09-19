@@ -8,6 +8,7 @@ use App\Exceptions\Mail\ImapAuthenticationException;
 use App\Exceptions\Mail\ImapConnectionException;
 use App\Models\Folder;
 use App\Models\Message;
+use Illuminate\Support\Collection;
 
 /**
  * Deleting a message is context-aware, same as every real webmail client:
@@ -110,5 +111,130 @@ final class MessageDeletionService
         $trashFolder->messages()->delete();
 
         return $messages->count();
+    }
+
+    /**
+     * Bulk equivalent of `destroy()`'s context-aware behavior — a
+     * multi-select delete action. Each message is judged by its *own*
+     * current folder (a bulk selection can span folders via the Starred/
+     * Search views, possibly mixing Trash and non-Trash messages in one
+     * batch): already-in-Trash messages are permanently deleted, everything
+     * else is moved to Trash. A failure on one message/folder never aborts
+     * the rest of the batch — collected in `failed` instead of thrown.
+     *
+     * Opens exactly one IMAP connection per email account involved, same
+     * reasoning as `MessageFlagService::setFlagsForMany()`. Permanent
+     * deletes within the same real Trash folder share a single `expunge()`
+     * call at the end, mirroring `emptyTrash()`'s optimization, rather than
+     * one `EXPUNGE` per message.
+     *
+     * @param  Collection<int, Message>  $messages
+     * @return array{trashed: Collection<int, Message>, deletedCount: int, failed: list<array{id: int, reason: string}>}
+     */
+    public function deleteMany(Collection $messages): array
+    {
+        $trashed = new Collection;
+        $deletedCount = 0;
+        $failed = [];
+
+        foreach ($messages->groupBy(fn (Message $message): int => $message->folder->email_account_id) as $accountMessages) {
+            $emailAccount = $accountMessages->first()->folder->emailAccount;
+
+            try {
+                $client = $this->connectionFactory->connectForAccount($emailAccount);
+            } catch (ImapAuthenticationException|ImapConnectionException $e) {
+                foreach ($accountMessages as $message) {
+                    $failed[] = ['id' => $message->id, 'reason' => $e->getMessage()];
+                }
+
+                continue;
+            }
+
+            try {
+                foreach ($accountMessages->groupBy('folder_id') as $folderMessages) {
+                    $folder = $folderMessages->first()->folder;
+
+                    try {
+                        $imapFolder = $this->connectionFactory->guard(fn () => $client->getFolderByPath($folder->name));
+
+                        if ($imapFolder === null) {
+                            throw new ImapConnectionException("Folder \"{$folder->name}\" no longer exists on the mail server.");
+                        }
+
+                        $uids = $folderMessages->pluck('uid')->all();
+                        $imapMessages = $this->connectionFactory->guard(
+                            fn () => $imapFolder->query()->whereUidIn($uids)->leaveUnread()->get(),
+                        );
+                        $byUid = collect($imapMessages)->keyBy(fn ($imapMessage): int => (int) $imapMessage->uid);
+
+                        if ($folder->type === 'trash') {
+                            $toDelete = [];
+
+                            foreach ($folderMessages as $message) {
+                                $imapMessage = $byUid->get($message->uid);
+
+                                // Already gone server-side is fine — deleting
+                                // the local row still achieves the intent.
+                                if ($imapMessage !== null) {
+                                    $this->connectionFactory->guard(fn () => $imapMessage->setFlag('Deleted'));
+                                }
+
+                                $toDelete[] = $message->id;
+                            }
+
+                            $this->connectionFactory->guard(fn () => $client->expunge());
+                            Message::query()->whereIn('id', $toDelete)->delete();
+                            $deletedCount += count($toDelete);
+
+                            continue;
+                        }
+
+                        $trashFolder = $emailAccount->folders()->where('type', 'trash')->first();
+
+                        if ($trashFolder === null) {
+                            foreach ($folderMessages as $message) {
+                                $failed[] = ['id' => $message->id, 'reason' => 'No Trash folder found for this account yet — refresh the folder list first.'];
+                            }
+
+                            continue;
+                        }
+
+                        foreach ($folderMessages as $message) {
+                            $imapMessage = $byUid->get($message->uid);
+
+                            if ($imapMessage === null) {
+                                $failed[] = ['id' => $message->id, 'reason' => 'The message no longer exists on the mail server.'];
+
+                                continue;
+                            }
+
+                            $movedImapMessage = $this->connectionFactory->guard(
+                                fn () => $imapMessage->move($trashFolder->name, expunge: true),
+                            );
+
+                            if ($movedImapMessage === null) {
+                                $failed[] = ['id' => $message->id, 'reason' => 'Could not move the message to Trash.'];
+
+                                continue;
+                            }
+
+                            $message->update([
+                                'folder_id' => $trashFolder->id,
+                                'uid' => (int) $movedImapMessage->uid,
+                            ]);
+                            $trashed->push($message->refresh());
+                        }
+                    } catch (ImapAuthenticationException|ImapConnectionException $e) {
+                        foreach ($folderMessages as $message) {
+                            $failed[] = ['id' => $message->id, 'reason' => $e->getMessage()];
+                        }
+                    }
+                }
+            } finally {
+                $this->connectionFactory->disconnect($client);
+            }
+        }
+
+        return ['trashed' => $trashed, 'deletedCount' => $deletedCount, 'failed' => $failed];
     }
 }

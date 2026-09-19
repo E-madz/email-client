@@ -194,6 +194,32 @@ function deleteLabel(message) {
   return inTrash ? 'حذف برای همیشه' : 'انتقال به سطل زباله'
 }
 
+/**
+ * Folders a bulk-selected batch could be moved to — reuses the same
+ * per-message eligibility as the single "move to" menu, but since a
+ * selection can mix messages from different source folders (in a
+ * cross-folder view), the option list is the *intersection* of what would
+ * be valid for every selected message. The backend still enforces this
+ * per-message regardless (a stale/optimistic list here is only a UX nicety).
+ */
+const bulkMoveTargets = computed(() => {
+  const selected = messages.items.filter((item) => messages.isSelected(item.id))
+  if (!selected.length) return folders.items
+
+  return folders.items.filter((candidate) => selected.every((item) => moveTargets(item).some((target) => target.id === candidate.id)))
+})
+
+function handleBulkMoveSelect(event) {
+  const folderId = Number(event.target.value)
+  event.target.value = ''
+  if (folderId) messages.bulkMove(folderId)
+}
+
+function bulkDelete() {
+  if (!confirm(`${messages.selectionCount} پیام حذف شود؟`)) return
+  messages.bulkDelete()
+}
+
 function goToPage(page) {
   if (page >= 1 && page <= (messages.meta?.last_page ?? 1)) {
     loadList(page)
@@ -226,8 +252,91 @@ onMounted(() => loadList(1))
 
 <template>
   <div class="flex h-full flex-col">
+    <div v-if="messages.selectionCount" class="flex items-center justify-between gap-2 border-b border-indigo-100 bg-indigo-50/60 px-4 py-2.5">
+      <div class="flex items-center gap-2">
+        <button
+          type="button"
+          class="rounded-md p-1 text-gray-400 transition hover:bg-white hover:text-gray-600"
+          aria-label="لغو انتخاب"
+          @click="messages.clearSelection()"
+        >
+          <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+            <path
+              d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z"
+            />
+          </svg>
+        </button>
+        <span class="text-sm font-semibold text-indigo-700">{{ messages.selectionCount }} پیام انتخاب‌شده</span>
+      </div>
+
+      <div class="flex items-center gap-1.5">
+        <button
+          type="button"
+          :disabled="messages.bulkActionLoading"
+          class="rounded-lg px-2.5 py-1.5 text-xs font-medium text-gray-600 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
+          @click="messages.bulkSetFlags({ is_read: true })"
+        >
+          خوانده‌شده
+        </button>
+        <button
+          type="button"
+          :disabled="messages.bulkActionLoading"
+          class="rounded-lg px-2.5 py-1.5 text-xs font-medium text-gray-600 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
+          @click="messages.bulkSetFlags({ is_read: false })"
+        >
+          خوانده‌نشده
+        </button>
+        <button
+          type="button"
+          :disabled="messages.bulkActionLoading"
+          class="rounded-lg px-2.5 py-1.5 text-xs font-medium text-amber-600 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
+          @click="messages.bulkSetFlags({ is_flagged: true })"
+        >
+          ستاره‌دار کن
+        </button>
+        <div class="relative">
+          <select
+            class="absolute inset-0 w-full cursor-pointer appearance-none opacity-0"
+            :disabled="messages.bulkActionLoading"
+            aria-label="انتقال گروهی به پوشه"
+            @change="handleBulkMoveSelect"
+          >
+            <option value="">انتقال به…</option>
+            <option v-for="folder in bulkMoveTargets" :key="folder.id" :value="folder.id">
+              {{ folder.display_name }}
+            </option>
+          </select>
+          <span class="pointer-events-none block rounded-lg px-2.5 py-1.5 text-xs font-medium text-indigo-600">انتقال به…</span>
+        </div>
+        <button
+          type="button"
+          :disabled="messages.bulkActionLoading"
+          class="rounded-lg px-2.5 py-1.5 text-xs font-medium text-red-600 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
+          @click="bulkDelete"
+        >
+          حذف
+        </button>
+      </div>
+    </div>
+    <ErrorBanner
+      v-if="messages.bulkError"
+      class="mx-4 mt-3"
+      :message="messages.bulkError?.message ?? 'عملیات گروهی با خطا مواجه شد.'"
+      :show-retry="false"
+    />
+
     <div class="flex items-center justify-between border-b border-gray-100 px-4 py-3.5">
-      <h2 class="text-[15px] font-bold tracking-tight text-gray-900">پیام‌ها</h2>
+      <div class="flex items-center gap-2.5">
+        <input
+          v-if="messages.items.length"
+          type="checkbox"
+          class="h-4 w-4 shrink-0 cursor-pointer rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+          :checked="messages.selectionCount > 0 && messages.selectionCount === messages.items.length"
+          aria-label="انتخاب همه"
+          @change="messages.selectionCount === messages.items.length ? messages.clearSelection() : messages.selectAllVisible()"
+        />
+        <h2 class="text-[15px] font-bold tracking-tight text-gray-900">پیام‌ها</h2>
+      </div>
       <div class="flex items-center gap-2">
         <button
           v-if="isTrash && !isSearchActive && messages.items.length"
@@ -355,16 +464,25 @@ onMounted(() => loadList(1))
       />
 
       <ul v-else class="divide-y divide-gray-100">
-        <li v-for="message in messages.items" :key="message.id" class="relative">
+        <li v-for="message in messages.items" :key="message.id" class="relative flex items-stretch">
           <span
             v-if="!message.is_read"
             class="brand-gradient absolute inset-y-0 right-0 w-[3px]"
             aria-hidden="true"
           />
+          <label class="flex shrink-0 items-center pr-4 pl-1" @click.stop>
+            <input
+              type="checkbox"
+              class="h-4 w-4 cursor-pointer rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+              :checked="messages.isSelected(message.id)"
+              :aria-label="`انتخاب پیام ${message.subject || '(بدون موضوع)'}`"
+              @change="messages.toggleSelected(message.id)"
+            />
+          </label>
           <button
             type="button"
             :draggable="isMovable(message)"
-            class="flex w-full flex-col gap-1 px-4 py-3.5 text-right transition hover:bg-gray-50/80"
+            class="flex w-full flex-col gap-1 py-3.5 pl-4 text-right transition hover:bg-gray-50/80"
             :class="{ 'bg-indigo-50/70': messages.selected?.id === message.id }"
             @click="emit('select', message.id)"
             @dragstart="isMovable(message) && handleDragStart($event, message)"
