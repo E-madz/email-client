@@ -85,7 +85,12 @@ async function handleLogout() {
           نوشتن ایمیل
         </button>
         <div class="mx-1 h-6 w-px bg-gray-200" />
-        <span class="text-sm font-medium text-gray-600">{{ auth.user?.name }}</span>
+        <RouterLink
+          :to="{ name: 'profile' }"
+          class="rounded-xl px-3 py-2 text-sm font-medium text-gray-600 transition hover:bg-gray-100 hover:text-gray-900"
+        >
+          {{ auth.user?.name }}
+        </RouterLink>
         <button
           type="button"
           class="rounded-xl px-3 py-2 text-sm font-medium text-gray-500 transition hover:bg-gray-100 hover:text-gray-700"

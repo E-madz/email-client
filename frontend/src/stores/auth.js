@@ -68,6 +68,34 @@ export const useAuthStore = defineStore('auth', {
       }
     },
 
+    async updateProfile({ name, username }) {
+      this.submitting = true
+      this.error = null
+
+      try {
+        this.user = await api.put('/profile', { name, username })
+      } catch (error) {
+        this.error = error instanceof ApiError ? error : null
+        throw error
+      } finally {
+        this.submitting = false
+      }
+    },
+
+    async updatePassword({ current_password, password, password_confirmation }) {
+      this.submitting = true
+      this.error = null
+
+      try {
+        await api.put('/profile/password', { current_password, password, password_confirmation })
+      } catch (error) {
+        this.error = error instanceof ApiError ? error : null
+        throw error
+      } finally {
+        this.submitting = false
+      }
+    },
+
     async logout() {
       try {
         await api.post('/logout')

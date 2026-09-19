@@ -9,6 +9,7 @@ use App\Http\Controllers\Api\DraftController;
 use App\Http\Controllers\Api\EmailAccountController;
 use App\Http\Controllers\Api\FolderController;
 use App\Http\Controllers\Api\MessageController;
+use App\Http\Controllers\Api\ProfileController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -25,6 +26,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::delete('/email-accounts/{emailAccount}', [EmailAccountController::class, 'destroy']);
 
     Route::middleware('throttle:10,1')->group(function () {
+        Route::put('/profile', [ProfileController::class, 'update']);
+        Route::put('/profile/password', [ProfileController::class, 'updatePassword']);
+
         Route::post('/email-accounts', [EmailAccountController::class, 'store']);
         Route::put('/email-accounts/{emailAccount}', [EmailAccountController::class, 'update']);
 
