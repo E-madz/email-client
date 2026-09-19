@@ -164,12 +164,17 @@ class BulkMessageActionsTest extends TestCase
 
         $movedFirst = $this->mockImapMessage(['uid' => 101]);
         $imapFirst = $this->mockImapMessage(['uid' => 1]);
-        $imapFirst->shouldReceive('move')->with('Archive', expunge: true)->once()->andReturn($movedFirst);
+        $imapFirst->shouldReceive('move')->with('Archive', expunge: false)->once()->andReturn($movedFirst);
         $movedSecond = $this->mockImapMessage(['uid' => 102]);
         $imapSecond = $this->mockImapMessage(['uid' => 2]);
-        $imapSecond->shouldReceive('move')->with('Archive', expunge: true)->once()->andReturn($movedSecond);
+        $imapSecond->shouldReceive('move')->with('Archive', expunge: false)->once()->andReturn($movedSecond);
 
-        $this->mockBulkConnection(['INBOX' => [$imapFirst, $imapSecond]]);
+        $client = $this->mockBulkConnection(['INBOX' => [$imapFirst, $imapSecond]]);
+        // Both messages land in one source-folder group — moving them with
+        // expunge: false and purging with a single explicit expunge() is
+        // the whole point of the optimization: one EXPUNGE for the batch,
+        // not one per message.
+        $client->shouldReceive('expunge')->once()->andReturn([]);
 
         $response = $this->actingAs($user, 'sanctum')->patchJson('/api/messages/bulk/move', [
             'message_ids' => [$first->id, $second->id],
@@ -200,8 +205,9 @@ class BulkMessageActionsTest extends TestCase
 
         $movedImap = $this->mockImapMessage(['uid' => 101]);
         $imapMessage = $this->mockImapMessage(['uid' => 1]);
-        $imapMessage->shouldReceive('move')->with('Archive', expunge: true)->once()->andReturn($movedImap);
-        $this->mockBulkConnection(['INBOX' => [$imapMessage]]);
+        $imapMessage->shouldReceive('move')->with('Archive', expunge: false)->once()->andReturn($movedImap);
+        $client = $this->mockBulkConnection(['INBOX' => [$imapMessage]]);
+        $client->shouldReceive('expunge')->once()->andReturn([]);
 
         $archive = Folder::factory()->for($account)->create(['name' => 'Archive', 'type' => 'archive']);
 
@@ -228,8 +234,9 @@ class BulkMessageActionsTest extends TestCase
 
         $movedImap = $this->mockImapMessage(['uid' => 201]);
         $imapMessage = $this->mockImapMessage(['uid' => 1]);
-        $imapMessage->shouldReceive('move')->with('Trash', expunge: true)->once()->andReturn($movedImap);
-        $this->mockBulkConnection(['INBOX' => [$imapMessage]]);
+        $imapMessage->shouldReceive('move')->with('Trash', expunge: false)->once()->andReturn($movedImap);
+        $client = $this->mockBulkConnection(['INBOX' => [$imapMessage]]);
+        $client->shouldReceive('expunge')->once()->andReturn([]);
 
         $response = $this->actingAs($user, 'sanctum')->deleteJson('/api/messages/bulk', [
             'message_ids' => [$message->id],

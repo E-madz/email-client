@@ -134,6 +134,7 @@ final class MessageMoveService
                         fn () => $imapFolder->query()->whereUidIn($uids)->leaveUnread()->get(),
                     );
                     $byUid = collect($imapMessages)->keyBy(fn ($imapMessage): int => (int) $imapMessage->uid);
+                    $movedAnyInThisFolder = false;
 
                     foreach ($sourceMessages as $message) {
                         $imapMessage = $byUid->get($message->uid);
@@ -144,8 +145,18 @@ final class MessageMoveService
                             continue;
                         }
 
+                        // expunge: false here — moving N messages one at a
+                        // time with expunge: true would issue N separate
+                        // EXPUNGE round-trips to the server (each its own
+                        // network round-trip on top of the COPY/STORE this
+                        // move already needs), which is the dominant cost of
+                        // a slow bulk move against a real mail server. A
+                        // single expunge() below, once per source folder,
+                        // purges every moved-out message's leftover copy in
+                        // one command instead — the same optimization
+                        // MessageDeletionService::emptyTrash() already uses.
                         $movedImapMessage = $this->connectionFactory->guard(
-                            fn () => $imapMessage->move($targetFolder->name, expunge: true),
+                            fn () => $imapMessage->move($targetFolder->name, expunge: false),
                         );
 
                         if ($movedImapMessage === null) {
@@ -159,6 +170,11 @@ final class MessageMoveService
                             'uid' => (int) $movedImapMessage->uid,
                         ]);
                         $moved->push($message->refresh());
+                        $movedAnyInThisFolder = true;
+                    }
+
+                    if ($movedAnyInThisFolder) {
+                        $this->connectionFactory->guard(fn () => $client->expunge());
                     }
                 } catch (ImapAuthenticationException|ImapConnectionException $e) {
                     foreach ($sourceMessages as $message) {

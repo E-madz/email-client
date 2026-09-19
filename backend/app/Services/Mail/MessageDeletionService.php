@@ -199,6 +199,8 @@ final class MessageDeletionService
                             continue;
                         }
 
+                        $movedAnyToTrash = false;
+
                         foreach ($folderMessages as $message) {
                             $imapMessage = $byUid->get($message->uid);
 
@@ -208,8 +210,13 @@ final class MessageDeletionService
                                 continue;
                             }
 
+                            // expunge: false — see MessageMoveService::moveManyTo()'s
+                            // docblock: one EXPUNGE per message in a bulk move
+                            // is the dominant cost of a slow batch against a
+                            // real mail server; a single expunge() below
+                            // covers the whole group instead.
                             $movedImapMessage = $this->connectionFactory->guard(
-                                fn () => $imapMessage->move($trashFolder->name, expunge: true),
+                                fn () => $imapMessage->move($trashFolder->name, expunge: false),
                             );
 
                             if ($movedImapMessage === null) {
@@ -223,6 +230,11 @@ final class MessageDeletionService
                                 'uid' => (int) $movedImapMessage->uid,
                             ]);
                             $trashed->push($message->refresh());
+                            $movedAnyToTrash = true;
+                        }
+
+                        if ($movedAnyToTrash) {
+                            $this->connectionFactory->guard(fn () => $client->expunge());
                         }
                     } catch (ImapAuthenticationException|ImapConnectionException $e) {
                         foreach ($folderMessages as $message) {
