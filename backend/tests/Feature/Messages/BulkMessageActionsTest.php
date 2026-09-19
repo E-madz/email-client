@@ -35,15 +35,21 @@ class BulkMessageActionsTest extends TestCase
     /**
      * Wires a single mocked IMAP connection whose folder(s) answer
      * `whereUidIn()` with the given imap messages, keyed by folder name.
+     * Returns the client mock plus each folder mock (keyed the same way),
+     * so a test that also needs to move/delete out of one of them can wire
+     * `mockBatchMove()` against the exact same folder mock.
      *
      * @param  array<string, list<MockInterface>>  $imapMessagesByFolderName
+     * @return array{client: MockInterface, folders: array<string, MockInterface>}
      */
-    private function mockBulkConnection(array $imapMessagesByFolderName): MockInterface
+    private function mockBulkConnection(array $imapMessagesByFolderName): array
     {
         $client = Mockery::mock(Client::class);
         $client->shouldReceive('connect')->andReturnSelf();
         $client->shouldReceive('disconnect')->andReturnSelf();
         $client->shouldReceive('expunge')->andReturn([])->byDefault();
+
+        $folders = [];
 
         foreach ($imapMessagesByFolderName as $folderName => $imapMessages) {
             $whereQuery = Mockery::mock(WhereQuery::class);
@@ -55,13 +61,14 @@ class BulkMessageActionsTest extends TestCase
             $imapFolder->shouldReceive('query')->andReturn($whereQuery);
 
             $client->shouldReceive('getFolderByPath')->with($folderName)->andReturn($imapFolder);
+            $folders[$folderName] = $imapFolder;
         }
 
         $this->mock(ClientManager::class, function (MockInterface $mock) use ($client) {
             $mock->shouldReceive('make')->andReturn($client);
         });
 
-        return $client;
+        return ['client' => $client, 'folders' => $folders];
     }
 
     public function test_bulk_marking_messages_as_read_updates_all_of_them_over_one_connection(): void
@@ -162,19 +169,14 @@ class BulkMessageActionsTest extends TestCase
         $first = Message::factory()->for($inbox)->create(['uid' => 1]);
         $second = Message::factory()->for($inbox)->create(['uid' => 2]);
 
-        $movedFirst = $this->mockImapMessage(['uid' => 101]);
         $imapFirst = $this->mockImapMessage(['uid' => 1]);
-        $imapFirst->shouldReceive('move')->with('Archive', expunge: false)->once()->andReturn($movedFirst);
-        $movedSecond = $this->mockImapMessage(['uid' => 102]);
         $imapSecond = $this->mockImapMessage(['uid' => 2]);
-        $imapSecond->shouldReceive('move')->with('Archive', expunge: false)->once()->andReturn($movedSecond);
 
-        $client = $this->mockBulkConnection(['INBOX' => [$imapFirst, $imapSecond]]);
-        // Both messages land in one source-folder group — moving them with
-        // expunge: false and purging with a single explicit expunge() is
-        // the whole point of the optimization: one EXPUNGE for the batch,
-        // not one per message.
-        $client->shouldReceive('expunge')->once()->andReturn([]);
+        ['client' => $client, 'folders' => $folders] = $this->mockBulkConnection(['INBOX' => [$imapFirst, $imapSecond]]);
+        // Both messages land in one source-folder group — moved with a
+        // single batched moveManyMessages() call instead of one move() per
+        // message, the whole point of the optimization.
+        $this->mockBatchMove($client, $folders['INBOX'], 'Archive', [1, 2], 101);
 
         $response = $this->actingAs($user, 'sanctum')->patchJson('/api/messages/bulk/move', [
             'message_ids' => [$first->id, $second->id],
@@ -203,11 +205,9 @@ class BulkMessageActionsTest extends TestCase
         $movable = Message::factory()->for($inbox)->create(['uid' => 1]);
         $unmovable = Message::factory()->for($sent)->create(['uid' => 2]);
 
-        $movedImap = $this->mockImapMessage(['uid' => 101]);
         $imapMessage = $this->mockImapMessage(['uid' => 1]);
-        $imapMessage->shouldReceive('move')->with('Archive', expunge: false)->once()->andReturn($movedImap);
-        $client = $this->mockBulkConnection(['INBOX' => [$imapMessage]]);
-        $client->shouldReceive('expunge')->once()->andReturn([]);
+        ['client' => $client, 'folders' => $folders] = $this->mockBulkConnection(['INBOX' => [$imapMessage]]);
+        $this->mockBatchMove($client, $folders['INBOX'], 'Archive', [1], 101);
 
         $archive = Folder::factory()->for($account)->create(['name' => 'Archive', 'type' => 'archive']);
 
@@ -232,11 +232,9 @@ class BulkMessageActionsTest extends TestCase
         $trash = Folder::factory()->for($account)->create(['name' => 'Trash', 'type' => 'trash']);
         $message = Message::factory()->for($inbox)->create(['uid' => 1]);
 
-        $movedImap = $this->mockImapMessage(['uid' => 201]);
         $imapMessage = $this->mockImapMessage(['uid' => 1]);
-        $imapMessage->shouldReceive('move')->with('Trash', expunge: false)->once()->andReturn($movedImap);
-        $client = $this->mockBulkConnection(['INBOX' => [$imapMessage]]);
-        $client->shouldReceive('expunge')->once()->andReturn([]);
+        ['client' => $client, 'folders' => $folders] = $this->mockBulkConnection(['INBOX' => [$imapMessage]]);
+        $this->mockBatchMove($client, $folders['INBOX'], 'Trash', [1], 201);
 
         $response = $this->actingAs($user, 'sanctum')->deleteJson('/api/messages/bulk', [
             'message_ids' => [$message->id],
@@ -266,7 +264,7 @@ class BulkMessageActionsTest extends TestCase
         $imapSecond = $this->mockImapMessage(['uid' => 2]);
         $imapSecond->shouldReceive('setFlag')->with('Deleted')->once();
 
-        $client = $this->mockBulkConnection(['Trash' => [$imapFirst, $imapSecond]]);
+        ['client' => $client] = $this->mockBulkConnection(['Trash' => [$imapFirst, $imapSecond]]);
         $client->shouldReceive('expunge')->once()->andReturn([]);
 
         $response = $this->actingAs($user, 'sanctum')->deleteJson('/api/messages/bulk', [

@@ -40,9 +40,7 @@ class MessageDeletionTest extends TestCase
         $trash = Folder::factory()->for($account)->create(['name' => 'Trash', 'type' => 'trash']);
         $message = Message::factory()->for($inbox)->create(['uid' => 5]);
 
-        $movedImapMessage = $this->mockImapMessage(['uid' => 42]);
         $imapMessage = $this->mockImapMessage(['uid' => 5]);
-        $imapMessage->shouldReceive('move')->with('Trash', expunge: true)->once()->andReturn($movedImapMessage);
 
         $whereQuery = Mockery::mock(WhereQuery::class);
         $whereQuery->shouldReceive('whereUid')->andReturnSelf();
@@ -56,6 +54,8 @@ class MessageDeletionTest extends TestCase
         $client->shouldReceive('connect')->andReturnSelf();
         $client->shouldReceive('disconnect')->andReturnSelf();
         $client->shouldReceive('getFolderByPath')->with('INBOX')->andReturn($imapFolder);
+
+        $this->mockBatchMove($client, $imapFolder, 'Trash', [5], 42);
 
         $this->mock(ClientManager::class, function (MockInterface $mock) use ($client) {
             $mock->shouldReceive('make')->andReturn($client);

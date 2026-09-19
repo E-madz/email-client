@@ -199,42 +199,28 @@ final class MessageDeletionService
                             continue;
                         }
 
-                        $movedAnyToTrash = false;
+                        $existing = $folderMessages->filter(fn (Message $message) => $byUid->has($message->uid))->values();
 
                         foreach ($folderMessages as $message) {
-                            $imapMessage = $byUid->get($message->uid);
-
-                            if ($imapMessage === null) {
+                            if (! $byUid->has($message->uid)) {
                                 $failed[] = ['id' => $message->id, 'reason' => 'The message no longer exists on the mail server.'];
-
-                                continue;
                             }
-
-                            // expunge: false — see MessageMoveService::moveManyTo()'s
-                            // docblock: one EXPUNGE per message in a bulk move
-                            // is the dominant cost of a slow batch against a
-                            // real mail server; a single expunge() below
-                            // covers the whole group instead.
-                            $movedImapMessage = $this->connectionFactory->guard(
-                                fn () => $imapMessage->move($trashFolder->name, expunge: false),
-                            );
-
-                            if ($movedImapMessage === null) {
-                                $failed[] = ['id' => $message->id, 'reason' => 'Could not move the message to Trash.'];
-
-                                continue;
-                            }
-
-                            $message->update([
-                                'folder_id' => $trashFolder->id,
-                                'uid' => (int) $movedImapMessage->uid,
-                            ]);
-                            $trashed->push($message->refresh());
-                            $movedAnyToTrash = true;
                         }
 
-                        if ($movedAnyToTrash) {
-                            $this->connectionFactory->guard(fn () => $client->expunge());
+                        if ($existing->isEmpty()) {
+                            continue;
+                        }
+
+                        // Delegated to MessageMoveService — a single batched
+                        // IMAP MOVE for the whole group instead of one
+                        // Message::move() call per message (see its
+                        // moveExistingMessages() docblock for why that
+                        // wrapper is expensive per call).
+                        $result = $this->messageMoveService->moveExistingMessages($client, $folder, $trashFolder, $existing);
+                        $trashed->push(...$result['moved']->all());
+
+                        foreach ($result['unconfirmed'] as $message) {
+                            $failed[] = ['id' => $message->id, 'reason' => 'Could not confirm the message\'s new location after moving it to Trash.'];
                         }
                     } catch (ImapAuthenticationException|ImapConnectionException $e) {
                         foreach ($folderMessages as $message) {

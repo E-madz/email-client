@@ -160,6 +160,55 @@ trait InteractsWithImapMocks
     }
 
     /**
+     * Wires the IMAP call sequence `MessageMoveService::moveExistingMessages()`
+     * performs for a batched move (used by both the single-message and bulk
+     * move/move-to-trash paths): EXAMINE the target folder for `UIDNEXT`,
+     * re-select the source folder, one `moveManyMessages()` call for the
+     * whole UID list, then a target-folder UID search to confirm the new
+     * UIDs. Must be called *in addition to* whatever mocks the test already
+     * set up for finding the source messages (`getFolderByPath($sourceName)`
+     * returning a folder whose `query()` answers the initial lookup) — this
+     * only adds the `examine()` expectation to that same source folder mock
+     * and wires the separate target-folder mock.
+     *
+     * @param  list<int>  $sourceUids  the UIDs being moved, already known to exist in the source folder
+     * @param  list<int>|null  $resultingUids  UIDs the moved messages should be found under afterward;
+     *                                         defaults to a sequential run starting at $startUid
+     */
+    protected function mockBatchMove(
+        MockInterface $client,
+        MockInterface $sourceImapFolder,
+        string $targetFolderName,
+        array $sourceUids,
+        int $startUid,
+        ?array $resultingUids = null,
+        bool $moveSucceeds = true,
+    ): void {
+        $resultingUids ??= range($startUid, $startUid + count($sourceUids) - 1);
+
+        $sourceImapFolder->shouldReceive('examine')->andReturn([]);
+
+        $targetWhereQuery = Mockery::mock(WhereQuery::class);
+        $targetWhereQuery->shouldReceive('whereAll')->andReturnSelf();
+        $targetWhereQuery->shouldReceive('leaveUnread')->andReturnSelf();
+        $targetWhereQuery->shouldReceive('search')->andReturn(new Collection($resultingUids));
+
+        $targetImapFolder = Mockery::mock(ImapFolder::class);
+        $targetImapFolder->shouldReceive('examine')->andReturn(['uidnext' => $startUid]);
+        $targetImapFolder->shouldReceive('query')->andReturn($targetWhereQuery);
+
+        $client->shouldReceive('getFolderByPath')->with($targetFolderName)->andReturn($targetImapFolder);
+
+        $moveResponse = Mockery::mock(Response::class);
+        $moveResponse->shouldReceive('boolean')->andReturn($moveSucceeds);
+
+        $connection = Mockery::mock(ProtocolInterface::class);
+        $connection->shouldReceive('moveManyMessages')->with($sourceUids, $targetFolderName)->once()->andReturn($moveResponse);
+
+        $client->shouldReceive('getConnection')->andReturn($connection);
+    }
+
+    /**
      * Wires up ClientManager -> Client -> raw LIST response, for
      * FolderSyncService, which reads folder flags directly off the
      * connection rather than through the lossy Folder wrapper (see
