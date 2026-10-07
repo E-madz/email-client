@@ -1,0 +1,136 @@
+<script setup>
+import { reactive, ref } from 'vue'
+import { useRouter } from 'vue-router'
+import { useAuthStore } from '../stores/auth'
+import { ApiError } from '../lib/api'
+
+const router = useRouter()
+const auth = useAuthStore()
+
+const form = reactive({
+  name: '',
+  username: '',
+  email: '',
+  password: '',
+  password_confirmation: '',
+})
+const errorMessage = ref('')
+const fieldErrors = ref({})
+
+async function handleSubmit() {
+  errorMessage.value = ''
+  fieldErrors.value = {}
+
+  try {
+    await auth.register(form)
+    router.push({ name: 'mailbox' })
+  } catch (error) {
+    if (error instanceof ApiError) {
+      fieldErrors.value = error.errors ?? {}
+      errorMessage.value = error.status === 422 ? 'لطفاً خطاهای فرم را برطرف کنید.' : error.message
+    } else {
+      errorMessage.value = 'خطای غیرمنتظره‌ای رخ داد.'
+    }
+  }
+}
+</script>
+
+<template>
+  <div class="flex min-h-screen items-center justify-center px-4 py-10"
+    style="background: radial-gradient(circle at 15% 15%, #eef2ff 0%, transparent 45%), radial-gradient(circle at 85% 85%, #f5f3ff 0%, transparent 45%), #f8fafc">
+    <div class="w-full max-w-sm rounded-3xl border border-gray-100 bg-white p-8 shadow-xl shadow-indigo-950/5">
+      <div class="mb-8 text-center">
+        <h1 class="text-2xl font-bold tracking-tight text-gray-900">ساخت حساب کاربری</h1>
+        <p class="mt-1.5 text-sm text-gray-500">برای شروع، اطلاعات زیر را وارد کنید</p>
+      </div>
+
+      <form class="space-y-4" @submit.prevent="handleSubmit">
+        <div>
+          <label for="name" class="mb-1.5 block text-sm font-medium text-gray-700">نام</label>
+          <input
+            id="name"
+            v-model="form.name"
+            type="text"
+            required
+            class="w-full rounded-xl border border-gray-200 bg-gray-50/60 px-3.5 py-2.5 text-sm transition focus:border-indigo-400 focus:bg-white focus:outline-none focus:ring-4 focus:ring-indigo-500/10"
+          />
+          <p v-if="fieldErrors.name" class="mt-1 text-xs text-red-600">{{ fieldErrors.name[0] }}</p>
+        </div>
+
+        <div>
+          <label for="username" class="mb-1.5 block text-sm font-medium text-gray-700">نام کاربری</label>
+          <input
+            id="username"
+            v-model="form.username"
+            type="text"
+            autocomplete="username"
+            required
+            class="w-full rounded-xl border border-gray-200 bg-gray-50/60 px-3.5 py-2.5 text-sm transition focus:border-indigo-400 focus:bg-white focus:outline-none focus:ring-4 focus:ring-indigo-500/10"
+          />
+          <p v-if="fieldErrors.username" class="mt-1 text-xs text-red-600">{{ fieldErrors.username[0] }}</p>
+        </div>
+
+        <div>
+          <label for="email" class="mb-1.5 block text-sm font-medium text-gray-700">ایمیل</label>
+          <input
+            id="email"
+            v-model="form.email"
+            type="email"
+            autocomplete="email"
+            required
+            class="w-full rounded-xl border border-gray-200 bg-gray-50/60 px-3.5 py-2.5 text-sm transition focus:border-indigo-400 focus:bg-white focus:outline-none focus:ring-4 focus:ring-indigo-500/10"
+          />
+          <p v-if="fieldErrors.email" class="mt-1 text-xs text-red-600">{{ fieldErrors.email[0] }}</p>
+        </div>
+
+        <div>
+          <label for="password" class="mb-1.5 block text-sm font-medium text-gray-700">رمز عبور</label>
+          <input
+            id="password"
+            v-model="form.password"
+            type="password"
+            autocomplete="new-password"
+            required
+            class="w-full rounded-xl border border-gray-200 bg-gray-50/60 px-3.5 py-2.5 text-sm transition focus:border-indigo-400 focus:bg-white focus:outline-none focus:ring-4 focus:ring-indigo-500/10"
+          />
+          <p v-if="fieldErrors.password" class="mt-1 text-xs text-red-600">{{ fieldErrors.password[0] }}</p>
+        </div>
+
+        <div>
+          <label for="password_confirmation" class="mb-1.5 block text-sm font-medium text-gray-700">
+            تکرار رمز عبور
+          </label>
+          <input
+            id="password_confirmation"
+            v-model="form.password_confirmation"
+            type="password"
+            autocomplete="new-password"
+            required
+            class="w-full rounded-xl border border-gray-200 bg-gray-50/60 px-3.5 py-2.5 text-sm transition focus:border-indigo-400 focus:bg-white focus:outline-none focus:ring-4 focus:ring-indigo-500/10"
+          />
+        </div>
+
+        <p v-if="errorMessage" class="rounded-xl bg-red-50 px-3.5 py-2.5 text-sm text-red-700">{{ errorMessage }}</p>
+
+        <button
+          type="submit"
+          :disabled="auth.submitting"
+          class="brand-gradient flex w-full items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-500/25 transition hover:shadow-indigo-500/40 hover:brightness-110 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:brightness-100"
+        >
+          <span
+            v-if="auth.submitting"
+            class="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"
+          />
+          {{ auth.submitting ? 'در حال ثبت‌نام…' : 'ثبت‌نام' }}
+        </button>
+      </form>
+
+      <p class="mt-6 text-center text-sm text-gray-500">
+        قبلاً ثبت‌نام کرده‌اید؟
+        <RouterLink :to="{ name: 'login' }" class="font-semibold text-indigo-600 hover:text-indigo-700">
+          وارد شوید
+        </RouterLink>
+      </p>
+    </div>
+  </div>
+</template>
